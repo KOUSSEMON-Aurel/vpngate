@@ -31,6 +31,8 @@ func init() {
 	connectCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
 	connectCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before connecting")
 	connectCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
+	connectCmd.Flags().BoolVar(&flagHealthCheck, "health-check", true, "test server reachability before displaying selection")
+	connectCmd.Flags().IntVar(&flagHealthConcurrency, "health-concurrency", 20, "number of parallel health checks")
 	rootCmd.AddCommand(connectCmd)
 }
 
@@ -48,6 +50,27 @@ var connectCmd = &cobra.Command{
 		vpnServers = filterServers(vpnServers)
 		if len(*vpnServers) == 0 {
 			log.Fatal().Msg("No vpn servers matched the provided filters")
+		}
+
+		if flagHealthCheck {
+			log.Info().Msgf("Checking reachability of %d servers (timeout: 3s, concurrency: %d)...", len(*vpnServers), flagHealthConcurrency)
+			healthResults := vpn.CheckServers(*vpnServers, 3*1000*1000*1000, flagHealthConcurrency)
+
+			reachable := make([]vpn.Server, 0, len(*vpnServers))
+			for _, s := range *vpnServers {
+				if result, ok := healthResults[s.HostName]; ok && result.Reachable {
+					s.LatencyMs = result.LatencyMs
+					reachable = append(reachable, s)
+				}
+			}
+
+			filtered := len(*vpnServers) - len(reachable)
+			vpnServers = &reachable
+
+			if len(*vpnServers) == 0 {
+				log.Fatal().Msg("No reachable vpn servers found")
+			}
+			log.Info().Msgf("%d servers are reachable (%d filtered out as unreachable)", len(*vpnServers), filtered)
 		}
 
 		// Build rich server selection options and lookup map.
@@ -145,6 +168,19 @@ func buildServerSelection(servers []vpn.Server) ([]string, map[string]vpn.Server
 }
 
 func formatServerSelection(server vpn.Server, hostnameWidth int, countryWidth int) string {
+	if server.LatencyMs > 0 {
+		return fmt.Sprintf(
+			"%-*s  %-*s  %-15s  ping %s (real: %dms)",
+			hostnameWidth,
+			server.HostName,
+			countryWidth,
+			server.CountryLong,
+			server.IPAddr,
+			server.Ping,
+			server.LatencyMs,
+		)
+	}
+
 	return fmt.Sprintf(
 		"%-*s  %-*s  %-15s  ping %s",
 		hostnameWidth,

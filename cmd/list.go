@@ -24,6 +24,8 @@ func init() {
 	listCmd.Flags().StringVarP(&flagOutput, "output", "o", outputTable, "output format: table, json, csv")
 	listCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before listing")
 	listCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
+	listCmd.Flags().BoolVar(&flagHealthCheck, "health-check", false, "test server reachability before listing")
+	listCmd.Flags().IntVar(&flagHealthConcurrency, "health-concurrency", 20, "number of parallel health checks")
 }
 
 var listCmd = &cobra.Command{
@@ -47,6 +49,23 @@ var listCmd = &cobra.Command{
 		vpnServers = filterServers(vpnServers)
 		sortServers(vpnServers)
 
+		if flagHealthCheck {
+			log.Info().Msgf("Checking reachability of %d servers...", len(*vpnServers))
+			healthResults := vpn.CheckServers(*vpnServers, 3*1000*1000*1000, flagHealthConcurrency)
+
+			reachable := make([]vpn.Server, 0, len(*vpnServers))
+			for _, s := range *vpnServers {
+				if result, ok := healthResults[s.HostName]; ok && result.Reachable {
+					s.LatencyMs = result.LatencyMs
+					reachable = append(reachable, s)
+				}
+			}
+
+			filtered := len(*vpnServers) - len(reachable)
+			vpnServers = &reachable
+			log.Info().Msgf("%d servers are reachable (%d filtered out as unreachable)", len(*vpnServers), filtered)
+		}
+
 		switch strings.ToLower(flagOutput) {
 		case outputJSON:
 			if err := writeServersJSON(vpnServers); err != nil {
@@ -61,12 +80,23 @@ var listCmd = &cobra.Command{
 		}
 
 		table := tw.NewWriter(os.Stdout)
-		table.Header([]string{"#", "HostName", "Country", "Ping", "Score"})
+		if flagHealthCheck {
+			table.Header([]string{"#", "HostName", "Country", "Ping", "Latency", "Score"})
+		} else {
+			table.Header([]string{"#", "HostName", "Country", "Ping", "Score"})
+		}
 
 		for i, v := range *vpnServers {
-			err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, strconv.Itoa(v.Score)})
-			if err != nil {
-				log.Fatal().Msg(err.Error())
+			if flagHealthCheck {
+				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, strconv.Itoa(v.LatencyMs) + "ms", strconv.Itoa(v.Score)})
+				if err != nil {
+					log.Fatal().Msg(err.Error())
+				}
+			} else {
+				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, strconv.Itoa(v.Score)})
+				if err != nil {
+					log.Fatal().Msg(err.Error())
+				}
 			}
 		}
 		err = table.Render()

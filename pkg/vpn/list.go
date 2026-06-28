@@ -32,6 +32,7 @@ type Server struct {
 	IPAddr            string `csv:"IP"`
 	OpenVpnConfigData string `csv:"OpenVPN_ConfigData_Base64"`
 	Ping              string `csv:"Ping"`
+	LatencyMs         int    `csv:"-" json:"latency_ms,omitempty"`
 }
 
 // parseVpnList parses the VPN server list from CSV format
