@@ -106,12 +106,12 @@ func TestViewRendersStatusAndFooter(t *testing.T) {
 		results: map[string]vpn.ProbeResult{
 			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
 		},
-		mode:     ModeBrowse,
-		round:    3,
-		cursor:   0,
-		width:    100,
-		height:   24,
-		quitting: false,
+		mode:       ModeBrowse,
+		round:      3,
+		cursorHost: "a",
+		width:      100,
+		height:     24,
+		quitting:   false,
 	}
 
 	out := m.View()
