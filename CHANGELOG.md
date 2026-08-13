@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- Verify servers with a real OpenVPN probe before offering them: candidates are probed by actually running `openvpn` and only servers that complete the handshake (`PUSH_REPLY`) are considered usable. This filters out the many full/maintenance servers on vpngate.net that pass a plain TCP/TLS check but reject authentication (`AUTH_FAILED`).
+- Add continuous background re-verification (`--watch`, default on, `--watch-interval` 30s) so server health stays current while the list is on screen.
+- Add an interactive bubbletea TUI: `connect` opens a picker that only selects verified-working servers, `list` opens a live browser with status, latency, and score columns. Both fall back to plain output when not on a terminal.
+- Add `connect --best` to automatically select the fastest verified-working server.
+- Add `--health-concurrency` (10) and `--health-timeout` (5s) to tune probing.
+- Replace the old TCP-ping health check (`pkg/vpn/health.go`) with the OpenVPN probe (`pkg/vpn/probe.go`) and a monitor (`pkg/vpn/monitor.go`), and add unit tests for both.
+- Fix `connect`/`list` exiting with `log.Fatal` when the server list could not be fetched: errors now propagate through `RunE`.
+
 ## 0.7.0
 
 - Add `vpngate logs` to view the log for a background connection started with `connect -d`, with `-f`/`--follow` and `-n`/`--lines` options.

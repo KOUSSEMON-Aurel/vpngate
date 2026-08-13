@@ -93,6 +93,48 @@ Connect to a random server with quality filters:
 sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
 ```
 
+Connect to the fastest server that is verified to actually work (real OpenVPN probe):
+
+```shell
+sudo vpngate connect --best --country Japan
+```
+
+### Real server verification
+
+vpngate.net lists hundreds of servers, many of which are full or in
+maintenance: they answer on TCP/TLS but reject authentication, so a plain TCP
+ping check cannot tell them apart. Before connecting (or listing with
+`--health-check`), vpngate runs a real OpenVPN probe against each candidate
+and only offers servers that complete the handshake (`PUSH_REPLY`). Servers
+that respond with `AUTH_FAILED` are shown as unusable.
+
+Probing is continuous: results are re-verified in the background (every
+`--watch-interval`, default 30s) so the list stays current while you look at
+it. On a terminal, `connect` opens an interactive picker and `list` opens a
+live browser with status, latency, and score per server:
+
+```shell
+# interactive picker that only selects verified-working servers
+sudo vpngate connect --tui --country Japan
+
+# live browser with status columns
+vpngate list --tui --health-check
+
+# single-shot probe, no background re-verification, plain table output
+vpngate list --tui=false --watch=false --health-check --health-concurrency 10 --health-timeout 5s
+```
+
+Probe behaviour is configurable:
+
+```shell
+--health-check           probe servers with a real OpenVPN connection
+--health-concurrency     number of parallel probes (default 10)
+--health-timeout         per-server probe timeout (default 5s)
+--tui                    use the interactive TUI when on a terminal
+--watch                  keep re-verifying server health in the background
+--watch-interval         how often to re-verify servers (default 30s)
+```
+
 Refresh the cached server list before listing:
 
 ```shell
