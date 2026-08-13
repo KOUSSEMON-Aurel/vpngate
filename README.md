@@ -1,31 +1,27 @@
 # vpngate
 
-This is a client for [vpngate.net](https://www.vpngate.net/).
+Client pour [vpngate.net](https://www.vpngate.net/).
 
 ![vpngate](vpngate.gif)
 
-This client fetches the list of available relay servers provided by vpngate.net, and allows you to filter and connect to a server of your liking.
+Ce client récupère la liste des serveurs de relais fournis par vpngate.net, permet de les filtrer et de se connecter au serveur de son choix.
 
-You can check out your current IP address and region at <https://ipinfo.io/json>, or run the following:
+Particularité de ce fork : **chaque serveur est vérifié par un vrai probe OpenVPN avant d'être proposé**, car beaucoup de serveurs vpngate.net sont pleins ou en maintenance : ils répondent sur TCP/TLS mais rejettent l'authentification. Un simple test de ping TCP ne suffit donc pas à les détecter.
+
+Vérifiez votre IP et votre région sur <https://ipinfo.io/json>, ou :
 
 ```shell
 curl ipinfo.io
 ```
 
-## Requirements
+## Prérequis
 
-- OpenVPN
-- macOS, Linux, or Windows
+- [OpenVPN](https://openvpn.net/)
+- macOS, Linux, ou Windows
 
-## Install
+## Installation
 
-> Check out [vpngate-mac](https://github.com/davegallant/vpngate-mac) for a native macOS Client
-
-You can install vpngate in a few different ways, and it will differ slightly depending on your OS.
-
-### Homebrew (macOS and linux)
-
-vpngate can be installed with [homebrew](https://brew.sh/) (if on macOS, ensure that xcode is installed before installing homebrew by running `xcode-select --install`).
+### Homebrew (macOS et Linux)
 
 ```shell
 brew install openvpn davegallant/public/vpngate
@@ -33,40 +29,71 @@ brew install openvpn davegallant/public/vpngate
 
 ### Windows
 
-Install OpenVPN from the [official website](https://openvpn.net/community-downloads/), then manually download and extract the Windows release from the relevant Github release.
+Installez OpenVPN depuis le [site officiel](https://openvpn.net/community-downloads/), téléchargez l'archive de la release Windows et extrayez-la. Ouvrez ensuite une invite de commandes *en tant qu'administrateur* et lancez `vpngate.exe`.
 
-Once the release is extracted, open Command Prompt *as Administrator*, and run vpngate.exe from the location where it was extracted.
+### Compilation depuis les sources
 
-<img width="278" alt="image" src="https://github.com/user-attachments/assets/fb47270d-82bb-4790-833a-377b874c8104">
-
-<img width="565" alt="image" src="https://github.com/user-attachments/assets/42287904-6c00-48d1-bff3-9757cf250519">
-
-### Build from source
-
-Ensure that [go](https://golang.org/doc/install) is installed.
+Prérequis : [Go](https://go.dev/doc/install).
 
 ```shell
-CGO_ENABLED=0 go get github.com/davegallant/vpngate
+git clone https://github.com/KOUSSEMON-Aurel/vpngate.git
+cd vpngate
+go build -o vpngate .
 ```
 
-Ensure that the go bin path is discoverable:
+Ou installez directement le binaire dans `$GOBIN` :
+
+```shell
+CGO_ENABLED=0 go install github.com/KOUSSEMON-Aurel/vpngate@latest
+```
+
+Assurez-vous que le chemin des binaires Go est accessible :
 
 ```shell
 echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.profile
 source ~/.profile
 ```
 
-## Usage
+## Utilisation
 
-For full usage instructions, see [the cli docs](docs/cli/vpngate.md).
+La référence complète des commandes est dans [la doc CLI](docs/cli/vpngate.md).
 
-> If on macOS, you may need to add openvpn to your PATH (if you installed it with brew): `export PATH=$(brew --prefix openvpn)/sbin:$PATH`
+> Sur macOS (Homebrew), ajoutez openvpn au PATH : `export PATH=$(brew --prefix openvpn)/sbin:$PATH`
 
-### Examples
+### Se connecter
 
-Run in the background, then check on it, tail its log, or disconnect later.
-`status`, `logs`, and `disconnect` need `sudo` too, since the daemon's state
-is only readable by the user that ran `connect -d` (root):
+```shell
+# choix interactif dans le TUI, avec santé vérifiée en direct
+sudo vpngate connect --country Japan
+
+# connexion au serveur vérifié le plus rapide, sans prompt
+sudo vpngate connect --best --country Japan
+
+# serveur aléatoire avec filtres de qualité
+sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
+```
+
+> `openvpn` crée une interface réseau : lancez `connect` avec `sudo` ou un utilisateur ayant les droits élevés.
+
+### Lister
+
+```shell
+# navigateur live (TUI) avec statut/latence/score de chaque serveur
+vpngate list --tui --health-check
+
+# serveurs japonais triés par ping le plus bas
+vpngate list --country Japan --sort ping
+
+# serveurs US à fort score en JSON
+vpngate list --country us --min-score 1000000 --output json
+
+# table simple, un seul passage de vérification, pas de TUI
+vpngate list --tui=false --watch=false --health-check
+```
+
+### En arrière-plan
+
+Démarrez la connexion en tâche de fond puis consultez-la, suivez son journal ou déconnectez-vous plus tard. `status`, `logs` et `disconnect` nécessitent aussi `sudo`, car l'état du daemon n'est lisible que par l'utilisateur qui a lancé `connect -d` (root) :
 
 ```shell
 sudo vpngate connect -d --country Japan
@@ -75,86 +102,35 @@ sudo vpngate logs -f
 sudo vpngate disconnect
 ```
 
-List Japanese servers sorted by lowest ping:
+### Cache
 
 ```shell
-vpngate list --country Japan --sort ping
+vpngate cache path      # emplacement du cache
+vpngate cache clear     # vide le cache
+vpngate list --refresh  # rafraîchit la liste avant de lister
+vpngate list --no-cache # ignore le cache
 ```
 
-List high-scoring US servers as JSON:
+## Vérification réelle des serveurs
 
-```shell
-vpngate list --country us --min-score 1000000 --output json
-```
+vpngate.net référence des centaines de serveurs, mais beaucoup sont pleins ou en maintenance : ils acceptent la connexion TCP/TLS puis rejettent l'authentification (`AUTH_FAILED`). Un contrôle de type « ping TCP » ne peut pas les distinguer d'un serveur sain.
 
-Connect to a random server with quality filters:
+Avant de connecter (ou de lister avec `--health-check`), vpngate lance donc un **vrai probe OpenVPN** sur chaque candidat en exécutant le binaire `openvpn`, et ne marque utilisable que le serveur qui complète la négociation (`PUSH_REPLY`). Les serveurs qui répondent `AUTH_FAILED` sont affichés comme inutilisables, et l'échec TCP/TLS est distingué (`unreachable`/`timeout`).
 
-```shell
-sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
-```
+La vérification est **continue** : les résultats sont revérifiés en arrière-plan (toutes les `--watch-interval`, 30s par défaut) pendant que la liste reste affichée.
 
-Connect to the fastest server that is verified to actually work (real OpenVPN probe):
+Comportement configurable :
 
-```shell
-sudo vpngate connect --best --country Japan
-```
-
-### Real server verification
-
-vpngate.net lists hundreds of servers, many of which are full or in
-maintenance: they answer on TCP/TLS but reject authentication, so a plain TCP
-ping check cannot tell them apart. Before connecting (or listing with
-`--health-check`), vpngate runs a real OpenVPN probe against each candidate
-and only offers servers that complete the handshake (`PUSH_REPLY`). Servers
-that respond with `AUTH_FAILED` are shown as unusable.
-
-Probing is continuous: results are re-verified in the background (every
-`--watch-interval`, default 30s) so the list stays current while you look at
-it. On a terminal, `connect` opens an interactive picker and `list` opens a
-live browser with status, latency, and score per server:
-
-```shell
-# interactive picker that only selects verified-working servers
-sudo vpngate connect --tui --country Japan
-
-# live browser with status columns
-vpngate list --tui --health-check
-
-# single-shot probe, no background re-verification, plain table output
-vpngate list --tui=false --watch=false --health-check --health-concurrency 10 --health-timeout 5s
-```
-
-Probe behaviour is configurable:
-
-```shell
---health-check           probe servers with a real OpenVPN connection
---health-concurrency     number of parallel probes (default 10)
---health-timeout         per-server probe timeout (default 5s)
---tui                    use the interactive TUI when on a terminal
---watch                  keep re-verifying server health in the background
---watch-interval         how often to re-verify servers (default 30s)
-```
-
-Refresh the cached server list before listing:
-
-```shell
-vpngate list --refresh
-```
-
-Bypass the cache entirely:
-
-```shell
-vpngate list --no-cache
-```
-
-Inspect or clear the cache:
-
-```shell
-vpngate cache path
-vpngate cache clear
-```
+| Option | Défaut | Description |
+|---|---|---|
+| `--health-check` | connect: true / list: false | probe OpenVPN réel avant sélection/listage |
+| `--health-concurrency` | `10` | nombre de probes en parallèle |
+| `--health-timeout` | `5s` | délai max par serveur |
+| `--tui` | `true` | TUI interactif quand on est sur un terminal |
+| `--watch` | `true` | revérification continue en arrière-plan |
+| `--watch-interval` | `30s` | fréquence de revérification |
 
 ## Notes
 
-- I do not maintain any of the servers on vpngate.net (connect to these servers at your own discretion)
-- Many of the listed servers claim to have a logging policy of 2 weeks
+- Je ne maintiens aucun des serveurs de vpngate.net (connexion à ces serveurs à vos risques et périls).
+- Beaucoup de serveurs listés déclarent une politique de logs de 2 semaines.
