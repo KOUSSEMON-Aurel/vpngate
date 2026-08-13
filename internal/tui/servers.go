@@ -15,17 +15,40 @@ func (m *model) displayServers() []vpn.Server {
 	servers := make([]vpn.Server, len(m.servers))
 	copy(servers, m.servers)
 
-	sort.SliceStable(servers, func(i, j int) bool {
-		ri, rj := m.results[servers[i].HostName], m.results[servers[j].HostName]
-		ki, kj := statusInfoFor(ri.Status).rank, statusInfoFor(rj.Status).rank
-		if ki != kj {
-			return ki < kj
+	// Freeze the sort order for the duration of a probe round. Live status
+	// updates then re-render in place instead of shuffling rows (and the
+	// pinned cursor) on every 200ms poll; the order is re-derived once a
+	// full round completes.
+	if m.orderRound != m.round || len(m.order) != len(servers) {
+		sort.SliceStable(servers, func(i, j int) bool {
+			ri, rj := m.results[servers[i].HostName], m.results[servers[j].HostName]
+			ki, kj := statusInfoFor(ri.Status).rank, statusInfoFor(rj.Status).rank
+			if ki != kj {
+				return ki < kj
+			}
+			if ki == 0 {
+				return ri.LatencyMs < rj.LatencyMs
+			}
+			return servers[i].HostName < servers[j].HostName
+		})
+		m.order = m.order[:0]
+		for _, s := range servers {
+			m.order = append(m.order, s.HostName)
 		}
-		if ki == 0 {
-			return ri.LatencyMs < rj.LatencyMs
+		m.orderRound = m.round
+	} else {
+		byHost := make(map[string]int, len(servers))
+		for i := range servers {
+			byHost[servers[i].HostName] = i
 		}
-		return servers[i].HostName < servers[j].HostName
-	})
+		ordered := make([]vpn.Server, 0, len(servers))
+		for _, hn := range m.order {
+			if i, ok := byHost[hn]; ok {
+				ordered = append(ordered, servers[i])
+			}
+		}
+		servers = ordered
+	}
 
 	if m.workingOnly {
 		out := make([]vpn.Server, 0, len(servers))

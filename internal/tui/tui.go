@@ -58,6 +58,9 @@ type model struct {
 	selected    *vpn.Server
 	quitting    bool
 	spin        int
+	geo         geoInfo
+	order       []string
+	orderRound  uint64
 }
 
 // spinnerFrames is a compact braille loader used for servers whose state is
@@ -76,6 +79,10 @@ var (
 	styleCursor    = lipgloss.NewStyle().Background(lipgloss.Color("238")).Foreground(lipgloss.Color("255"))
 	styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255"))
 	styleSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleGeo       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("45"))
+	styleMarker    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
+	styleLand      = lipgloss.NewStyle().Foreground(lipgloss.Color("70"))
+	styleOcean     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 // Column widths for the fixed-width fields; the hostname takes the rest.

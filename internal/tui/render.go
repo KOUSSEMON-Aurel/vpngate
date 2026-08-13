@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/davegallant/vpngate/pkg/vpn"
 )
 
@@ -28,19 +29,80 @@ func (m *model) View() string {
 	b.WriteString(m.titleBar(w))
 	b.WriteString(m.statusBar(w))
 	b.WriteString(styleSeparator.Render(strings.Repeat("─", w)) + "\n")
-	b.WriteString(m.columnHeader(w))
 
+	mv := m.mapView()
+	bodyW := w
+	if mv != nil {
+		bodyW = w - mv.width - 1
+		if bodyW < 40 {
+			bodyW = w
+			mv = nil
+		}
+	}
+
+	body := m.body(list, h, bodyW)
+	if mv != nil {
+		body = sideBySide(body, strings.Join(mv.lines, "\n"), bodyW)
+	}
+	b.WriteString(body)
+	b.WriteString(m.footer(w))
+	b.WriteString(m.geoBar(w))
+	return b.String()
+}
+
+// body renders the column header, the visible rows and, when the terminal is
+// tall enough, the detail pane for the selected server.
+func (m *model) body(list []vpn.Server, h, w int) string {
+	var b strings.Builder
+	b.WriteString(m.columnHeader(w))
 	rows := m.visibleRows()
 	for i := m.offset; i < len(list) && i < m.offset+rows; i++ {
 		b.WriteString(m.row(list[i], i, w))
 	}
 	b.WriteString("\n")
-
 	if h >= 16 {
 		b.WriteString(m.detailPane(w))
 	}
-	b.WriteString(m.footer(w))
 	return b.String()
+}
+
+// sideBySide joins two multi-line blocks into a single line-per-row string,
+// padding the left block to leftW so the two columns align.
+func sideBySide(left, right string, leftW int) string {
+	ll := strings.Split(strings.TrimRight(left, "\n"), "\n")
+	rl := strings.Split(strings.TrimRight(right, "\n"), "\n")
+	pad := lipgloss.NewStyle().Width(leftW)
+	n := len(ll)
+	if len(rl) > n {
+		n = len(rl)
+	}
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		var l, r string
+		if i < len(ll) {
+			l = ll[i]
+		}
+		if i < len(rl) {
+			r = rl[i]
+		}
+		b.WriteString(pad.Render(l))
+		if i < len(rl) {
+			b.WriteString(" ")
+			b.WriteString(r)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// geoBar is the bottom line showing the user's resolved public location.
+func (m *model) geoBar(w int) string {
+	label := m.geo.locLabel()
+	st := styleDim
+	if m.geo.loaded && m.geo.err == nil && m.geo.code != "" {
+		st = styleGeo
+	}
+	return st.Render(truncate("  "+label, w)) + "\n"
 }
 
 func (m *model) titleBar(w int) string {

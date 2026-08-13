@@ -40,7 +40,7 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 }
 
 func (m *model) Init() tea.Cmd {
-	return m.nextCmds()
+	return tea.Batch(m.nextCmds(), geoCmd())
 }
 
 // pollCmd samples the monitor's latest results on a fixed interval.
@@ -113,6 +113,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursorHost = list[0].HostName
 			}
 		}
+		return m, m.nextCmds()
+
+	case geoMsg:
+		m.geo = geoInfo(msg)
 		return m, m.nextCmds()
 
 	case tea.KeyMsg:

@@ -128,3 +128,110 @@ func TestViewHiddenWhenQuitting(t *testing.T) {
 		t.Errorf("expected empty view when quitting, got %q", out)
 	}
 }
+
+func TestViewWithGeoShowsMapAndLocation(t *testing.T) {
+	a := testServer("a")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      3,
+		cursorHost: "a",
+		width:      140,
+		height:     24,
+		geo: geoInfo{
+			loaded: true,
+			code:   "FR",
+			name:   "France",
+			city:   "Paris",
+		},
+	}
+
+	out := m.View()
+	for _, want := range []string{"YOU", "●", "France", "Paris", "🇫🇷"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("View() missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestViewWithoutGeoFallsBack(t *testing.T) {
+	a := testServer("a")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      1,
+		cursorHost: "a",
+		width:      140,
+		height:     24,
+	}
+	out := m.View()
+	if n := strings.Count(out, "locating"); n != 2 {
+		t.Errorf("View() should show locating fallback twice (map + geo bar), got %d in:\n%s", n, out)
+	}
+	// The map column must not pin a marker before geo resolves. Status icons
+	// also use "●", so scope the check to the map region (below the "YOU"
+	// header, right-hand column).
+	lines := strings.Split(out, "\n")
+	youIdx := -1
+	for i, l := range lines {
+		if strings.Contains(l, "YOU") {
+			youIdx = i
+			break
+		}
+	}
+	if youIdx < 0 {
+		t.Fatalf("View() missing YOU header in:\n%s", out)
+	}
+	for _, l := range lines[youIdx+1 : youIdx+1+11] {
+		mapCol := ""
+		if len(l) > 30 {
+			mapCol = l[len(l)-30:]
+		}
+		if strings.Contains(mapCol, "●") {
+			t.Errorf("map column pinned a marker without geo in line %q", l)
+		}
+	}
+}
+
+func TestDisplayServersOrderStableWithinRound(t *testing.T) {
+	a, b, c, d := testServer("a"), testServer("b"), testServer("c"), testServer("d")
+	m := &model{
+		servers: []vpn.Server{c, a, d, b},
+		results: map[string]vpn.ProbeResult{
+			"b": {Status: vpn.ProbeWorking, LatencyMs: 80},
+			"c": {Status: vpn.ProbeWorking, LatencyMs: 20},
+			"a": {Status: vpn.ProbeAuthFailed},
+		},
+		round: 7,
+	}
+
+	first := m.displayServers()
+
+	// Same round: latency flips and a new result appears, but the row order
+	// must stay frozen so the cursor does not jump mid-round.
+	m.results["b"] = vpn.ProbeResult{Status: vpn.ProbeWorking, LatencyMs: 10}
+	m.results["d"] = vpn.ProbeResult{Status: vpn.ProbeWorking, LatencyMs: 5}
+
+	second := m.displayServers()
+	if len(first) != len(second) {
+		t.Fatalf("length changed: %v vs %v", first, second)
+	}
+	for i := range first {
+		if first[i].HostName != second[i].HostName {
+			t.Fatalf("order changed mid-round at %d: %v vs %v", i, first, second)
+		}
+	}
+
+	// Advancing the round lets the new order through.
+	m.round = 8
+	third := m.displayServers()
+	if third[0].HostName != "d" {
+		t.Fatalf("expected new fastest first after round advance, got %v", third)
+	}
+}
