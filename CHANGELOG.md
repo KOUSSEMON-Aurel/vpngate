@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.0
+
+- Add `vpngate logs` to view the log for a background connection started with `connect -d`, with `-f`/`--follow` and `-n`/`--lines` options.
+- Simplify the interactive server selection list to show a country flag emoji, country name, and IP address (e.g. `🇯🇵 Japan (219.100.37.4)`), dropping the hostname/ping/score columns and column-alignment padding.
+- Alias vpngate.net's `Korea Republic of` and `Russian Federation` country names to `South Korea` and `Russia`.
+
+## 0.6.0
+
+- Add `connect -d`/`--daemon` to run a vpn connection in the background.
+- Add `vpngate status` to check on a background connection started with `connect -d`.
+- Add `vpngate disconnect` to tear down a background connection started with `connect -d`.
+- Add winget packaging for Windows (manifest publishing is currently disabled pending fork/token setup).
+- Fix `connect -d` silently timing out with no useful error when OpenVPN isn't installed: the background supervisor now logs its own startup failures to `daemon.log` (previously discarded, since the detached process has no console), with the same "is required, please install it" message the foreground `connect` command already gives.
+
+## 0.5.0
+
+- Fix a nil-pointer panic when the vpngate.net server list API returns a non-200 status code.
+- Fix the retry backoff between failed server-list fetch attempts, which was effectively instantaneous (1ns) instead of 1 second.
+- Fix `connect --reconnect` handling so a single connection attempt (without `--reconnect`) no longer loops forever after a clean disconnect.
+- Fix a potential deadlock when reading OpenVPN's stdout/stderr output.
+- Fix a leftover temporary OpenVPN config file when writing or closing it failed.
+- Return errors from CLI commands instead of calling `log.Fatal` directly, for cleaner and more consistent error output.
+- Update golang.org/x/net to v0.55.0 [security].
+- Add test coverage for retry logic and CLI helper functions.
+
 ## 0.4.0
 
 - Add server filtering by country, maximum ping, and minimum score to list and connect commands.

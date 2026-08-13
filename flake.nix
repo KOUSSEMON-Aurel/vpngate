@@ -22,7 +22,7 @@
         pkgs.buildGo126Module {
           name = "vpngate";
           src = ./.;
-          vendorHash = "sha256-1Ag2WxMGxCJPCBGqom0Xxl81V7dBNA35TFtOHtjvUhg=";
+          vendorHash = "sha256-0StOKxOJ6f6QLnecgASLaN3Qy9Q4MDqYmnfaA3MCoxo=";
           nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.makeWrapper ];
           env.CGO_ENABLED = 0;
           doCheck = false;
@@ -54,6 +54,10 @@
               gopls
               gotools
               golangci-lint
+              just
+              asciinema
+              asciinema-agg
+              gifsicle
             ];
             shellHook = ''
               echo "Welcome to the vpngate dev environment"

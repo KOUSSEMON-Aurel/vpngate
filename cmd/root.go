@@ -7,12 +7,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 var rootCmd = &cobra.Command{
 	Use:     "vpngate",
 	Short:   "vpngate is a client for vpngate.net",
 	Version: version,
+	// Subcommands return errors via RunE; Execute below is the single place
+	// that prints and sets the exit code, so cobra's own error/usage output
+	// is silenced to avoid duplicating it.
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			_ = cmd.Help()
@@ -26,4 +31,12 @@ func Execute() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// RootCmd exposes the fully-wired command tree (every subcommand's init()
+// has already run by the time any importer can call this) — used by
+// tools/gendocs to walk it with cobra/doc, without making rootCmd itself
+// package-public.
+func RootCmd() *cobra.Command {
+	return rootCmd
 }

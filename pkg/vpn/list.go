@@ -18,10 +18,15 @@ import (
 )
 
 const (
-	vpnList           = "https://www.vpngate.net/api/iphone/"
 	httpClientTimeout = 30 * time.Second
 	dialTimeout       = 10 * time.Second
+	fetchRetryDelay   = time.Second
+	fetchRetryCount   = 5
 )
+
+// vpnList is the URL of the vpngate server list API. It is a var so tests
+// can point it at a local httptest.Server instead of the real endpoint.
+var vpnList = "https://www.vpngate.net/api/iphone/"
 
 // Server holds information about a vpn relay server
 type Server struct {
@@ -53,7 +58,20 @@ func parseVpnList(r io.Reader) (*[]Server, error) {
 		return nil, errors.Annotatef(err, "Unable to parse CSV")
 	}
 
+	for i := range servers {
+		if alias, ok := countryAliases[servers[i].CountryLong]; ok {
+			servers[i].CountryLong = alias
+		}
+	}
+
 	return &servers, nil
+}
+
+// countryAliases maps vpngate.net's CountryLong values to more familiar
+// country names.
+var countryAliases = map[string]string{
+	"Korea Republic of":  "South Korea",
+	"Russian Federation": "Russia",
 }
 
 // createHTTPClient creates an HTTP client with optional proxy configuration
@@ -160,7 +178,7 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 
 	var servers *[]Server
 
-	err = util.Retry(5, 1, func() error {
+	err = util.Retry(fetchRetryCount, fetchRetryDelay, func() error {
 		resp, err := client.Get(vpnList)
 		if err != nil {
 			return err
@@ -170,7 +188,7 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 		}()
 
 		if resp.StatusCode != http.StatusOK {
-			return errors.Annotatef(err, "Unexpected status code when retrieving vpn list: %d", resp.StatusCode)
+			return errors.Errorf("Unexpected status code when retrieving vpn list: %d", resp.StatusCode)
 		}
 
 		parsedServers, err := parseVpnList(resp.Body)

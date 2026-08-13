@@ -4,9 +4,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	tw "github.com/olekukonko/tablewriter"
-	"github.com/rs/zerolog/log"
 
 	"github.com/davegallant/vpngate/pkg/vpn"
 
@@ -24,84 +24,70 @@ func init() {
 	listCmd.Flags().StringVarP(&flagOutput, "output", "o", outputTable, "output format: table, json, csv")
 	listCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before listing")
 	listCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
-	listCmd.Flags().BoolVar(&flagHealthCheck, "health-check", false, "test server reachability before listing")
-	listCmd.Flags().IntVar(&flagHealthConcurrency, "health-concurrency", 20, "number of parallel health checks")
+	listCmd.Flags().BoolVar(&flagHealthCheck, "health-check", false, "probe servers with a real OpenVPN connection before listing")
+	listCmd.Flags().IntVar(&flagHealthConcurrency, "health-concurrency", 10, "number of parallel health probes")
+	listCmd.Flags().DurationVar(&flagHealthTimeout, "health-timeout", 5*time.Second, "per-server health probe timeout")
+	listCmd.Flags().BoolVar(&flagTUI, "tui", true, "use the interactive TUI browser when on a terminal")
+	listCmd.Flags().BoolVar(&flagWatch, "watch", true, "keep re-verifying server health in the background")
+	listCmd.Flags().DurationVar(&flagWatchInterval, "watch-interval", 30*time.Second, "how often to re-verify servers in the background")
 }
 
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available vpn servers",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := validateSortFlag(); err != nil {
-			log.Fatal().Msg(err.Error())
+			return err
 		}
 		if err := validateOutputFlag(); err != nil {
-			log.Fatal().Msg(err.Error())
+			return err
 		}
 
 		vpnServers, err := vpn.GetListWithOptions(flagProxy, flagSocks5Proxy, vpn.ListOptions{Refresh: flagRefresh, NoCache: flagNoCache})
 		if err != nil {
-			log.Fatal().Msg(err.Error())
+			return err
 		}
 
 		vpnServers = filterServers(vpnServers)
 		sortServers(vpnServers)
 
+		if flagTUI && terminalInteractive() && strings.EqualFold(flagOutput, outputTable) {
+			return runTuiBrowse(cmd.Context(), *vpnServers, flagHealthConcurrency, flagHealthTimeout, flagWatchInterval)
+		}
+
+		probeResults := make(map[string]vpn.ProbeResult)
 		if flagHealthCheck {
-			log.Info().Msgf("Checking reachability of %d servers...", len(*vpnServers))
-			healthResults := vpn.CheckServers(*vpnServers, 3*1000*1000*1000, flagHealthConcurrency)
-
-			reachable := make([]vpn.Server, 0, len(*vpnServers))
-			for _, s := range *vpnServers {
-				if result, ok := healthResults[s.HostName]; ok && result.Reachable {
-					s.LatencyMs = result.LatencyMs
-					reachable = append(reachable, s)
-				}
-			}
-
-			filtered := len(*vpnServers) - len(reachable)
-			vpnServers = &reachable
-			log.Info().Msgf("%d servers are reachable (%d filtered out as unreachable)", len(*vpnServers), filtered)
+			probeResults = runProbe(cmd.Context(), *vpnServers, flagHealthConcurrency, flagHealthTimeout)
 		}
 
 		switch strings.ToLower(flagOutput) {
 		case outputJSON:
-			if err := writeServersJSON(vpnServers); err != nil {
-				log.Fatal().Msg(err.Error())
-			}
-			return
+			return writeServersJSON(vpnServers)
 		case outputCSV:
-			if err := writeServersCSV(vpnServers); err != nil {
-				log.Fatal().Msg(err.Error())
-			}
-			return
+			return writeServersCSV(vpnServers)
 		}
 
 		table := tw.NewWriter(os.Stdout)
 		if flagHealthCheck {
-			table.Header([]string{"#", "HostName", "Country", "Ping", "Latency", "Score"})
+			table.Header([]string{"#", "HostName", "Country", "Ping", "Status", "Latency", "Score"})
 		} else {
 			table.Header([]string{"#", "HostName", "Country", "Ping", "Score"})
 		}
 
 		for i, v := range *vpnServers {
 			if flagHealthCheck {
-				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, strconv.Itoa(v.LatencyMs) + "ms", strconv.Itoa(v.Score)})
+				r := probeResults[v.HostName]
+				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, probeStatusLabel(r.Status), probeLatencyLabel(r.LatencyMs), strconv.Itoa(v.Score)})
 				if err != nil {
-					log.Fatal().Msg(err.Error())
+					return err
 				}
 			} else {
-				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, strconv.Itoa(v.Score)})
-				if err != nil {
-					log.Fatal().Msg(err.Error())
+				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Ping, strconv.Itoa(v.Score)}); err != nil {
+					return err
 				}
 			}
 		}
-		err = table.Render()
-		if err != nil {
-			log.Fatal().Msg(err.Error())
-		}
+		return table.Render()
 	},
 }
