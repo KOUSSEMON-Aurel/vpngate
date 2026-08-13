@@ -81,6 +81,7 @@ var (
 	styleSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	styleGeo       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("45"))
 	styleMarker    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
+	// Temporarily restored for the ipwho.is commit; removed with the globe.
 	styleLand      = lipgloss.NewStyle().Foreground(lipgloss.Color("70"))
 	styleOcean     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )

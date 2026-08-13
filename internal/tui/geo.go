@@ -29,8 +29,7 @@ type geoMsg geoInfo
 func geoCmd() tea.Cmd {
 	return func() tea.Msg {
 		client := &http.Client{Timeout: 4 * time.Second}
-		req, err := http.NewRequest(http.MethodGet,
-			"https://ip-api.com/json/?fields=status,country,countryCode,regionName,city", nil)
+		req, err := http.NewRequest(http.MethodGet, "https://ipwho.is/", nil)
 		if err != nil {
 			return geoMsg{loaded: true, err: err}
 		}
@@ -39,25 +38,25 @@ func geoCmd() tea.Cmd {
 		if err != nil {
 			return geoMsg{loaded: true, err: err}
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			return geoMsg{loaded: true, err: fmt.Errorf("geo lookup: http %d", resp.StatusCode)}
 		}
 		var data struct {
-			Status      string `json:"status"`
+			Success     bool   `json:"success"`
 			Country     string `json:"country"`
-			CountryCode string `json:"countryCode"`
-			RegionName  string `json:"regionName"`
+			CountryCode string `json:"country_code"`
+			Region      string `json:"region"`
 			City        string `json:"city"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 			return geoMsg{loaded: true, err: err}
 		}
-		if data.Status != "success" || data.CountryCode == "" {
+		if !data.Success || data.CountryCode == "" {
 			return geoMsg{loaded: true, err: fmt.Errorf("geo lookup: no location")}
 		}
 		return geoMsg{loaded: true, code: data.CountryCode, name: data.Country,
-			region: data.RegionName, city: data.City}
+			region: data.Region, city: data.City}
 	}
 }
 
