@@ -127,11 +127,14 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 	defer mon.Stop()
 
 	m := &model{
-		servers:     opts.Servers,
-		monitor:     mon,
-		results:     make(map[string]vpn.ProbeResult),
-		mode:        opts.Mode,
-		workingOnly: opts.Mode == ModeSelect,
+		servers: opts.Servers,
+		monitor: mon,
+		results: make(map[string]vpn.ProbeResult),
+		mode:    opts.Mode,
+		// All servers are shown immediately so the list is usable before
+		// the first probe round completes. Working relays sort to the top
+		// as they are verified, and "w" still filters to working-only.
+		workingOnly: false,
 	}
 
 	p := tea.NewProgram(m, tea.WithContext(ctx))
@@ -204,10 +207,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case statusMsg:
-		if msg.round != m.round {
+		// Apply the latest results snapshot on every poll so statuses
+		// stream in live while a round is still in flight, instead of
+		// waiting for the whole round to complete. The round counter only
+		// advances when a full round finishes.
+		if msg.round > m.round {
 			m.round = msg.round
-			m.results = msg.results
 		}
+		m.results = msg.results
 		return m, pollCmd(m.monitor, m.round)
 	}
 

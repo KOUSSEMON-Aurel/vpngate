@@ -144,7 +144,7 @@ func probeOpenVPN(ctx context.Context, server *Server, timeout time.Duration) Pr
 		"--dev", "null",
 		"--ifconfig-noexec",
 		"--route-noexec",
-		"--connect-retry-max", "0",
+		"--connect-retry-max", "1",
 		"--connect-retry", "1",
 		"--connect-timeout", fmt.Sprint(connectTimeout),
 		"--verb", "3",
@@ -228,15 +228,20 @@ func scanProbeOutput(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.Reade
 				return ProbeResult{Status: ProbeAuthFailed, LatencyMs: int(time.Since(start).Milliseconds())}
 			}
 		case <-ctx.Done():
-			_ = cmd.Process.Kill()
+			// Kill and reap so no openvpn process is left behind, even
+			// when the parent is cancelled mid-probe.
+			killAndReap()
 			return ProbeResult{Status: ProbeTimeout, Detail: "probe timed out"}
 		}
 	}
 }
 
 // ProbeServers probes servers concurrently with a bounded number of
-// parallel probes and returns a map keyed by hostname.
-func ProbeServers(ctx context.Context, servers []Server, concurrency int, timeout time.Duration) map[string]ProbeResult {
+// parallel probes and returns a map keyed by hostname. When onResult is
+// provided it is invoked with each completed result as soon as it is ready
+// so callers can stream progress live instead of waiting for the whole
+// batch.
+func ProbeServers(ctx context.Context, servers []Server, concurrency int, timeout time.Duration, onResult ...func(name string, res ProbeResult)) map[string]ProbeResult {
 	results := make(map[string]ProbeResult, len(servers))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -247,10 +252,14 @@ func ProbeServers(ctx context.Context, servers []Server, concurrency int, timeou
 
 	sem := make(chan struct{}, concurrency)
 
+loop:
 	for i := range servers {
 		select {
 		case <-ctx.Done():
-			break
+			// Stop dispatching new probes once the context is cancelled;
+			// in-flight probes finish and are cleaned up by their own
+			// timeouts.
+			break loop
 		default:
 		}
 
@@ -266,6 +275,10 @@ func ProbeServers(ctx context.Context, servers []Server, concurrency int, timeou
 			mu.Lock()
 			results[s.HostName] = result
 			mu.Unlock()
+
+			if len(onResult) > 0 {
+				onResult[0](s.HostName, result)
+			}
 
 			if result.Status == ProbeWorking {
 				log.Debug().Msgf("%s (%s) verified working (%dms)", s.HostName, s.IPAddr, result.LatencyMs)

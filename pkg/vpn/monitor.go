@@ -124,7 +124,13 @@ func (m *Monitor) runRound() {
 	}()
 
 	m.markChecking()
-	results := ProbeServers(m.ctx, m.servers, m.concurrency, m.timeout)
+	results := ProbeServers(m.ctx, m.servers, m.concurrency, m.timeout, func(name string, res ProbeResult) {
+		// Publish each completed probe immediately so consumers (such as
+		// the TUI) stream statuses live while the round is still running.
+		m.mu.Lock()
+		m.results[name] = res
+		m.mu.Unlock()
+	})
 
 	m.mu.Lock()
 	for name, res := range results {
