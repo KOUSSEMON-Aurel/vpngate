@@ -139,7 +139,7 @@ type mapView struct {
 func (m *model) mapView() *mapView {
 	const width = 28
 	rows := m.visibleRows()
-	if m.width < 120 || rows < 1 {
+	if m.width < 80 || rows < 1 {
 		return nil
 	}
 

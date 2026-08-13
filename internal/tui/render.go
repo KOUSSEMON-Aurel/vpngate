@@ -151,6 +151,14 @@ func (m *model) statusBar(w int) string {
 func (m *model) columnHeader(w int) string {
 	hostW := m.hostWidth(w)
 	hdr := styleHeader.Render
+	if w < 64 {
+		return fmt.Sprintf(" %-*s %-11s %s%-7s %-7s\n",
+			hostW, hdr("HOSTNAME"),
+			hdr("STATUS"),
+			hdr(""), hdr("COUNTRY"),
+			hdr("LATENCY"),
+		)
+	}
 	return fmt.Sprintf(" %-*s %-11s %s%-9s %-8s %-7s\n",
 		hostW, hdr("HOSTNAME"),
 		hdr("STATUS"),
@@ -161,10 +169,17 @@ func (m *model) columnHeader(w int) string {
 }
 
 func (m *model) hostWidth(w int) int {
-	fixed := 1 + 1 + colStatusW + colCountryW + colLatencyW + colScoreW + 4
+	var fixed int
+	if w < 64 {
+		// Compact layout: drop the score column, tighten country/latency so
+		// the list still fits next to the world map on narrow terminals.
+		fixed = 1 + 1 + 1 + 1 + 1 + colStatusW + 1 + 2 + 7 + 1 + 7
+	} else {
+		fixed = 1 + 1 + colStatusW + colCountryW + colLatencyW + colScoreW + 4
+	}
 	hostW := w - fixed
-	if hostW < 16 {
-		hostW = 16
+	if hostW < 10 {
+		hostW = 10
 	}
 	if hostW > 40 {
 		hostW = 40
@@ -193,7 +208,11 @@ func (m *model) row(s vpn.Server, i int, w int) string {
 	}
 
 	flag := countryFlag(s.CountryShort)
-	country := truncate(s.CountryLong, 9)
+	countryMax := 9
+	if w < 64 {
+		countryMax = 7
+	}
+	country := truncate(s.CountryLong, countryMax)
 
 	hostW := m.hostWidth(w)
 	host := truncate(s.HostName, hostW)
@@ -205,12 +224,22 @@ func (m *model) row(s vpn.Server, i int, w int) string {
 		marker = styleHeader.Render("▸")
 	}
 
-	line := fmt.Sprintf(" %s %s %-*s %s %s%-9s %-8s %-7d",
-		marker, icon, hostW, host,
-		status,
-		flag, country,
-		latency, s.Score,
-	)
+	var line string
+	if w < 64 {
+		line = fmt.Sprintf(" %s %s %-*s %s %s%-7s %-7s",
+			marker, icon, hostW, host,
+			status,
+			flag, country,
+			latency,
+		)
+	} else {
+		line = fmt.Sprintf(" %s %s %-*s %s %s%-9s %-8s %-7d",
+			marker, icon, hostW, host,
+			status,
+			flag, country,
+			latency, s.Score,
+		)
+	}
 
 	if selected {
 		line = styleSelected.Render(truncate(line, w))

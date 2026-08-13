@@ -199,6 +199,34 @@ func TestViewWithoutGeoFallsBack(t *testing.T) {
 	}
 }
 
+func TestViewShowsMapAtNarrowWidth(t *testing.T) {
+	a := testServer("a-long-hostname.example")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      1,
+		cursorHost: "a",
+		width:      80,
+		height:     24,
+		geo: geoInfo{
+			loaded: true,
+			code:   "FR",
+			name:   "France",
+			city:   "Paris",
+		},
+	}
+	out := m.View()
+	if !strings.Contains(out, "YOU") {
+		t.Errorf("View() should show the world map at 80 columns, got:\n%s", out)
+	}
+	if strings.Contains(out, "SCORE") {
+		t.Errorf("View() at 80 cols should drop the SCORE column (compact layout), got:\n%s", out)
+	}
+}
+
 func TestDisplayServersOrderStableWithinRound(t *testing.T) {
 	a, b, c, d := testServer("a"), testServer("b"), testServer("c"), testServer("d")
 	m := &model{
