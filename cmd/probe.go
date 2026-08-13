@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-isatty"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/davegallant/vpngate/internal/tui"
@@ -58,9 +59,20 @@ func probeLatencyLabel(ms int) string {
 	return strconv.Itoa(ms) + "ms"
 }
 
+// quietLogs silences logger output while an interactive TUI owns the
+// terminal, so concurrent probe progress lines cannot corrupt the rendered
+// screen. It returns a function that restores the previous global level.
+func quietLogs() func() {
+	previous := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	return func() { zerolog.SetGlobalLevel(previous) }
+}
+
 // runTuiPicker opens the interactive server picker. The returned bool is
 // false when the user quit without selecting a server.
 func runTuiPicker(ctx context.Context, servers []vpn.Server) (vpn.Server, bool, error) {
+	restore := quietLogs()
+	defer restore()
 	return tui.Run(ctx, tui.Options{
 		Servers:     servers,
 		Concurrency: flagHealthConcurrency,
@@ -73,6 +85,8 @@ func runTuiPicker(ctx context.Context, servers []vpn.Server) (vpn.Server, bool, 
 
 // runTuiBrowse opens the read-only live server browser.
 func runTuiBrowse(ctx context.Context, servers []vpn.Server, concurrency int, timeout, interval time.Duration) error {
+	restore := quietLogs()
+	defer restore()
 	_, _, err := tui.Run(ctx, tui.Options{
 		Servers:     servers,
 		Concurrency: concurrency,
