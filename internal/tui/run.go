@@ -96,6 +96,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.spin = (m.spin + 1) % len(spinnerFrames)
+		m.globeRot++
 		return m, m.nextCmds()
 
 	case statusMsg:

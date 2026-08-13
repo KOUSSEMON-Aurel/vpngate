@@ -30,7 +30,7 @@ func (m *model) View() string {
 	b.WriteString(m.statusBar(w))
 	b.WriteString(styleSeparator.Render(strings.Repeat("─", w)) + "\n")
 
-	mv := m.mapView()
+	mv := m.globeView()
 	bodyW := w
 	if mv != nil {
 		bodyW = w - mv.width - 1

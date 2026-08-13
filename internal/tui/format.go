@@ -53,11 +53,6 @@ func statusIcon(status vpn.ProbeStatus) string {
 	}
 }
 
-// statusStyle returns the color used for a status label.
-func statusStyle(status vpn.ProbeStatus) lipgloss.Style {
-	return statusInfoFor(status).style
-}
-
 // countryFlag converts an ISO 3166-1 alpha-2 code into its flag emoji.
 func countryFlag(code string) string {
 	code = strings.ToUpper(code)
@@ -104,7 +99,7 @@ func truncate(s string, max int) string {
 				// CSI: consume parameters up to the terminating byte
 				// (0x40-0x7E) so the sequence is never split.
 				i++
-				for i < len(rs) && !(rs[i] >= 0x40 && rs[i] <= 0x7e) {
+				for i < len(rs) && (rs[i] < 0x40 || rs[i] > 0x7e) {
 					i++
 				}
 				if i < len(rs) {

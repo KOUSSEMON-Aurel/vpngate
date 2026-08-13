@@ -228,6 +228,92 @@ func TestViewShowsMapAtNarrowWidth(t *testing.T) {
 	}
 }
 
+func TestLandAt(t *testing.T) {
+	land := func(lat, lon float64) bool { return landAt(lat, lon) }
+	cases := []struct {
+		lat, lon float64
+		want     bool
+	}{
+		{51.5, -0.1, true},   // London
+		{48.8, 2.3, true},    // Paris
+		{35.6, 139.7, true},  // Tokyo
+		{-33.8, 151.2, true}, // Sydney
+		{0, 0, false},        // Gulf of Guinea (ocean)
+		{0, -130, false},     // mid-Pacific
+		{-14.5, -48.2, true}, // central Brazil
+		{30, 20, true},       // Sahara
+		{90, 0, false},       // North Pole (Arctic ocean)
+		{-90, 0, true},       // South Pole (Antarctica)
+	}
+	for _, c := range cases {
+		if got := land(c.lat, c.lon); got != c.want {
+			t.Errorf("landAt(%v, %v) = %v, want %v", c.lat, c.lon, got, c.want)
+		}
+	}
+}
+
+func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
+	a := testServer("a")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      1,
+		cursorHost: "a",
+		width:      140,
+		height:     24,
+		globeRot:   0,
+		geo: geoInfo{
+			loaded: true,
+			code:   "JP",
+			name:   "Japan",
+			city:   "Tokyo",
+		},
+	}
+
+	gv := m.globeView()
+	if gv == nil {
+		t.Fatal("globeView() returned nil at 140x24")
+	}
+	// 15 rows -> radius 7 -> 2*7+3 = 17 columns.
+	if gv.width != 17 {
+		t.Errorf("globeView width = %d, want 17", gv.width)
+	}
+	if len(gv.lines) != 17 {
+		t.Errorf("globeView has %d lines, want 17", len(gv.lines))
+	}
+
+	pinned := false
+	for _, l := range gv.lines {
+		if vw := lipgloss.Width(l); vw > gv.width {
+			t.Errorf("globe line exceeds column width %d: %q (%d)", gv.width, l, vw)
+		}
+		if strings.Contains(l, "●") {
+			pinned = true
+		}
+	}
+	if !pinned {
+		t.Errorf("globeView did not pin the Japan marker in:\n%s", strings.Join(gv.lines, "\n"))
+	}
+}
+
+func TestGlobeHiddenWhenShort(t *testing.T) {
+	a := testServer("a")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		width:  140,
+		height: 12, // visibleRows = 6 < 7 -> no globe
+	}
+	if gv := m.globeView(); gv != nil {
+		t.Errorf("globeView() should be nil at height 12, got width %d", gv.width)
+	}
+}
+
 func TestViewLinesNeverExceedWidth(t *testing.T) {
 	a := testServer("a-long-hostname.example.com")
 	for _, width := range []int{60, 80, 100, 140, 200} {

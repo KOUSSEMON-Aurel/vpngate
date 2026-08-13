@@ -3,13 +3,11 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // geoInfo is the user's public location, resolved once at TUI startup.
@@ -29,7 +27,8 @@ type geoMsg geoInfo
 func geoCmd() tea.Cmd {
 	return func() tea.Msg {
 		client := &http.Client{Timeout: 4 * time.Second}
-		req, err := http.NewRequest(http.MethodGet, "https://ipwho.is/", nil)
+		req, err := http.NewRequest(http.MethodGet,
+			"https://ipwho.is/", nil)
 		if err != nil {
 			return geoMsg{loaded: true, err: err}
 		}
@@ -78,112 +77,6 @@ func (g geoInfo) locLabel() string {
 		label = flag + " " + label
 	}
 	return label
-}
-
-// worldMap is a coarse equirectangular world map, one string per latitude
-// band. "░" is ocean, "▓" is land. Every row is exactly 26 runes wide and the
-// lat field is the band's centre used to place the location marker.
-var worldMap = []struct {
-	lat  float64
-	land string
-}{
-	{87, "░░░░░░░░░░░░░░░░░░░░░░░░░░"},
-	{58, "░▓▓▓▓░░░░░░░░░░░░▓▓▓▓▓▓▓"},
-	{42, "░░▓░▓▓▓▓▓░░░▓▓▓▓▓▓▓▓▓▓▓▓▓"},
-	{27, "░░░░░▓▓▓▓░░░▓▓▓▓▓▓▓▓▓▓▓▓░░"},
-	{12, "░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓░▓▓▓▓░░"},
-	{-2, "░░░░░░░░▓▓▓▓░▓▓▓▓▓▓░░▓▓▓░░"},
-	{-17, "░░░░░░░░░▓▓▓░░▓░▓░░░░▓▓▓▓░"},
-	{-32, "░░░░░░░░▓▓░░░░░░░░░░░░▓▓░░"},
-	{-47, "░░░░░░░░▓░░░░░░░░░░░░░░░░░"},
-	{-62, "░░░░░░░░░░░░░░░░░░░░░░░░░░"},
-	{-77, "░░░░░░░░░░░░░░░░░░░░░░░░░░"},
-}
-
-// mapWidth is the number of columns in each worldMap row.
-const mapWidth = 26
-
-// mapCoord approximates the screen coordinates of a country code. The world
-// map is hand-drawn so the marker is a best-effort pin, not a survey point.
-func mapCoord(code string) (row, col int, ok bool) {
-	c, ok := countryCoords[strings.ToUpper(code)]
-	if !ok {
-		return 0, 0, false
-	}
-	lat, lon := c[1], c[0]
-	row = 0
-	for i := range worldMap {
-		if math.Abs(lat-worldMap[i].lat) < math.Abs(lat-worldMap[row].lat) {
-			row = i
-		}
-	}
-	col = int(math.Round((lon + 180) / 360 * (mapWidth - 1)))
-	if col < 0 {
-		col = 0
-	}
-	if col > mapWidth-1 {
-		col = mapWidth - 1
-	}
-	return row, col, true
-}
-
-// mapView is a pre-rendered location panel for the right-hand column.
-type mapView struct {
-	lines []string
-	width int
-}
-
-// mapView builds the pixel world map with the user's location pinned. It
-// returns nil when the terminal is too narrow or short to fit it.
-func (m *model) mapView() *mapView {
-	const width = 28
-	rows := m.visibleRows()
-	if m.width < 80 || rows < 1 {
-		return nil
-	}
-
-	var lines []string
-	title := styleGeo.Render("YOU")
-	sub := ""
-	if m.geo.loaded && m.geo.err == nil && m.geo.code != "" {
-		title = styleGeo.Render("YOU") + " " + countryFlag(m.geo.code)
-		sub = m.geo.code
-		if m.geo.city != "" {
-			sub += " · " + m.geo.city
-		} else if m.geo.name != "" {
-			sub += " · " + m.geo.name
-		}
-	} else if !m.geo.loaded {
-		sub = "locating…"
-	} else {
-		sub = "unavailable"
-	}
-
-	lines = append(lines, " "+title)
-	markerRow, markerCol, hasMarker := mapCoord(m.geo.code)
-	for i, band := range worldMap {
-		var b strings.Builder
-		b.WriteByte(' ')
-		runes := []rune(band.land)
-		for c := 0; c < len(runes); c++ {
-			switch {
-			case hasMarker && i == markerRow && c == markerCol:
-				b.WriteString(styleMarker.Render("●"))
-			case runes[c] == '▓':
-				b.WriteString(styleLand.Render("▓"))
-			default:
-				b.WriteString(styleOcean.Render("░"))
-			}
-		}
-		lines = append(lines, b.String())
-	}
-	lines = append(lines, " "+styleDim.Render(truncate(sub, width-2)))
-
-	pad := lipgloss.NewStyle()
-	for i, l := range lines {
-		lines[i] = pad.Width(width).Render(truncate(l, width))
-	}
-	return &mapView{lines: lines, width: width}
 }
 
 // countryCoords maps ISO 3166-1 alpha-2 codes to (longitude, latitude) so the
