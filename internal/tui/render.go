@@ -150,22 +150,24 @@ func (m *model) statusBar(w int) string {
 
 func (m *model) columnHeader(w int) string {
 	hostW := m.hostWidth(w)
-	hdr := styleHeader.Render
+	var line string
 	if w < 64 {
-		return fmt.Sprintf(" %-*s %-11s %s%-7s %-7s\n",
-			hostW, hdr("HOSTNAME"),
-			hdr("STATUS"),
-			hdr(""), hdr("COUNTRY"),
-			hdr("LATENCY"),
+		line = fmt.Sprintf(" %-*s %-11s %s%-7s %-7s",
+			hostW, "HOSTNAME",
+			"STATUS",
+			"", "COUNTRY",
+			"LATENCY",
+		)
+	} else {
+		line = fmt.Sprintf(" %-*s %-11s %s%-9s %-8s %-7s",
+			hostW, "HOSTNAME",
+			"STATUS",
+			"", "COUNTRY",
+			"LATENCY",
+			"SCORE",
 		)
 	}
-	return fmt.Sprintf(" %-*s %-11s %s%-9s %-8s %-7s\n",
-		hostW, hdr("HOSTNAME"),
-		hdr("STATUS"),
-		hdr(""), hdr("COUNTRY"),
-		hdr("LATENCY"),
-		hdr("SCORE"),
-	)
+	return styleHeader.Render(truncate(line, w)) + "\n"
 }
 
 func (m *model) hostWidth(w int) int {

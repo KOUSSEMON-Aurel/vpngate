@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/davegallant/vpngate/pkg/vpn"
 )
 
@@ -224,6 +225,34 @@ func TestViewShowsMapAtNarrowWidth(t *testing.T) {
 	}
 	if strings.Contains(out, "SCORE") {
 		t.Errorf("View() at 80 cols should drop the SCORE column (compact layout), got:\n%s", out)
+	}
+}
+
+func TestViewLinesNeverExceedWidth(t *testing.T) {
+	a := testServer("a-long-hostname.example.com")
+	for _, width := range []int{60, 80, 100, 140, 200} {
+		m := &model{
+			servers: []vpn.Server{a},
+			results: map[string]vpn.ProbeResult{
+				"a": {Status: vpn.ProbeWorking, LatencyMs: 1234},
+			},
+			mode:       ModeBrowse,
+			round:      3,
+			cursorHost: "a",
+			width:      width,
+			height:     24,
+			geo: geoInfo{
+				loaded: true,
+				code:   "FR",
+				name:   "France",
+				city:   "Paris",
+			},
+		}
+		for i, l := range strings.Split(m.View(), "\n") {
+			if vw := lipgloss.Width(l); vw > width {
+				t.Errorf("width %d: line %d is %d visible columns wide:\n%q", width, i, vw, l)
+			}
+		}
 	}
 }
 

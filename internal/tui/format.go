@@ -74,14 +74,61 @@ func countryFlag(code string) string {
 	return b.String()
 }
 
-// truncate shortens s to at most max runes, adding an ellipsis.
+// ansiReset clears terminal styling; truncate appends it when a cut lands
+// inside a styled segment so the ellipsis never leaks the truncated colour.
+const ansiReset = "\x1b[0m"
+
+// truncate shortens s to at most max visible columns, appending an ellipsis
+// when it cuts. ANSI escape sequences count as zero width and are copied
+// verbatim, so styled strings can be truncated without splitting an escape
+// sequence (which would render as literal garbage) or corrupting colours.
 func truncate(s string, max int) string {
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
+	rs := []rune(s)
+	if max <= 0 {
+		return ""
 	}
-	if max <= 1 {
-		return string(runes[:max])
+	if max == 1 {
+		if len(rs) <= 1 {
+			return s
+		}
+		return string(rs[:1])
 	}
-	return string(runes[:max-1]) + "…"
+	var b strings.Builder
+	n := 0
+	for i := 0; i < len(rs); {
+		r := rs[i]
+		if r == '\x1b' {
+			start := i
+			i++
+			if i < len(rs) && rs[i] == '[' {
+				// CSI: consume parameters up to the terminating byte
+				// (0x40-0x7E) so the sequence is never split.
+				i++
+				for i < len(rs) && !(rs[i] >= 0x40 && rs[i] <= 0x7e) {
+					i++
+				}
+				if i < len(rs) {
+					i++
+				}
+			} else {
+				// OSC or lone ESC: consume up to BEL (or the end).
+				for i < len(rs) && rs[i] != '\a' {
+					i++
+				}
+				if i < len(rs) {
+					i++
+				}
+			}
+			b.WriteString(string(rs[start:i]))
+			continue
+		}
+		if n >= max-1 {
+			b.WriteString(ansiReset + "…")
+			return b.String()
+		}
+		b.WriteRune(r)
+		n++
+		i++
+	}
+	return b.String()
 }
