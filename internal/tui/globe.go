@@ -99,14 +99,22 @@ func (m *model) globeView() *globeView {
 	if m.width < 80 || rows < 7 {
 		return nil
 	}
-	// The globe is sized to the room left after the column header, the
-	// blank line and - when shown - the 3-line detail pane.
-	r := (rows - 1) / 2
-	if m.height >= 16 {
-		r = (rows + 2) / 2
+	// The globe fills as much of the right-hand column as the frame can
+	// hold: the list body (header + rows + spacer + detail pane) sets the
+	// vertical ceiling so the globe never pushes the footer off, and the
+	// horizon is the rate at which the list column may shrink.
+	r := (rows + 2) / 2
+	if m.height < 16 {
+		r = (rows - 1) / 2
 	}
-	if r > 7 {
-		r = 7
+	if r > 12 {
+		r = 12
+	}
+	if maxW := (m.width - 44) / 2; r > maxW {
+		r = maxW
+	}
+	if r < 4 {
+		return nil
 	}
 	width := 2*r + 3
 
@@ -118,11 +126,12 @@ func (m *model) globeView() *globeView {
 	hasMarker := false
 	// Exact coordinates from the geolocation API win; the country table is
 	// only a fallback when they are missing.
+	g := m.liveGeoInfo()
 	var markerLat, markerLon float64
-	if m.geo.loaded && m.geo.err == nil {
-		if m.geo.lat != 0 || m.geo.lon != 0 {
-			markerLat, markerLon = m.geo.lat, m.geo.lon
-		} else if c, ok := countryCoords[strings.ToUpper(m.geo.code)]; ok {
+	if g.loaded && g.err == nil {
+		if g.lat != 0 || g.lon != 0 {
+			markerLat, markerLon = g.lat, g.lon
+		} else if c, ok := countryCoords[strings.ToUpper(g.code)]; ok {
 			markerLat, markerLon = c[1], c[0]
 		}
 	}
@@ -136,24 +145,24 @@ func (m *model) globeView() *globeView {
 
 	title := styleGeo.Render("YOU")
 	sub := ""
-	if m.geo.loaded && m.geo.err == nil && m.geo.code != "" {
+	if g.loaded && g.err == nil && g.code != "" {
 		// On a VPN the resolved location is the exit point, so the pin
 		// changes colour and label instead of masquerading as home.
 		label, st := "YOU", styleGeo
-		if m.geo.vpn {
+		if g.vpn {
 			label, st = "VPN", styleMarkerVpn
 		}
-		title = st.Render(label) + " " + countryFlag(m.geo.code)
-		sub = m.geo.code
-		if m.geo.city != "" {
-			sub += " · " + m.geo.city
-		} else if m.geo.name != "" {
-			sub += " · " + m.geo.name
+		title = st.Render(label) + " " + countryFlag(g.code)
+		sub = g.code
+		if g.city != "" {
+			sub += " · " + g.city
+		} else if g.name != "" {
+			sub += " · " + g.name
 		}
-		if m.geo.vpn {
+		if g.vpn {
 			sub += " · via VPN"
 		}
-	} else if !m.geo.loaded {
+	} else if !g.loaded {
 		sub = "locating…"
 	} else {
 		// No usable geolocation: keep the pin hidden and show a clear

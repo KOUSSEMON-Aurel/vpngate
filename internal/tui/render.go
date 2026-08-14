@@ -234,11 +234,13 @@ func sideBySide(left, right string, leftW int) string {
 	return b.String()
 }
 
-// geoBar is the bottom line showing the user's resolved public location.
+// geoBar is the bottom line showing the user's resolved public location. It
+// switches to the verified tunnel exit while a connection is up.
 func (m *model) geoBar(w int) string {
-	label := m.geo.locLabel()
+	g := m.liveGeoInfo()
+	label := g.locLabel()
 	st := styleDim
-	if m.geo.loaded && m.geo.err == nil && m.geo.code != "" {
+	if g.loaded && g.err == nil && g.code != "" {
 		st = styleGeo
 	}
 	return st.Render(truncate("  "+label, w)) + "\n"

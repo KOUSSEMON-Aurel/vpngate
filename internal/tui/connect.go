@@ -179,12 +179,15 @@ func (m *model) applyConnLine(line string) {
 			cs.server = s
 		}
 		cs.connected = true
+		m.globeDirty = true
 	case strings.HasPrefix(line, "[vpngate] exit: "):
 		if ip, cc, geo, ok := parseExitLine(strings.TrimPrefix(line, "[vpngate] exit: ")); ok {
 			cs.exitIP, cs.exitCC, cs.exitGeo = ip, cc, geo
+			m.globeDirty = true
 		}
 	case strings.Contains(line, "tunnel dropped"):
 		cs.connected = false
+		m.globeDirty = true
 	}
 }
 
@@ -215,15 +218,27 @@ func parseExitLine(rest string) (ip, cc, geo string, ok bool) {
 
 // connPanelView renders the connection log panel, which replaces the list
 // body while m.connPanel is set. The title bar stays on top and the panel
-// keeps the same chrome budget so it never exceeds the terminal height.
+// keeps the same chrome budget so it never exceeds the terminal height. When
+// the terminal is wide enough the globe column stays on the right so the
+// exit location stays in view while connected.
 func (m *model) connPanelView(w int) string {
 	cs := m.connect
 	if cs == nil {
 		return ""
 	}
 
+	mv := m.globeView()
+	panelW := w
+	if mv != nil {
+		panelW = w - mv.width - 1
+		if panelW < 40 {
+			panelW = w
+			mv = nil
+		}
+	}
+
 	var b strings.Builder
-	b.WriteString(m.titleBar(w))
+	b.WriteString(m.titleBar(panelW))
 	b.WriteString("\n")
 
 	s := cs.server
@@ -236,13 +251,13 @@ func (m *model) connPanelView(w int) string {
 			head += fmt.Sprintf(" %s %s", countryFlag(cs.exitCC), cs.exitGeo)
 		}
 	}
-	b.WriteString(truncate(head, w) + "\n")
+	b.WriteString(truncate(head, panelW) + "\n")
 
 	if cs.err != nil && !cs.canceled {
-		b.WriteString(styleError.Render(truncate(" ✖ "+cs.err.Error(), w)) + "\n")
+		b.WriteString(styleError.Render(truncate(" ✖ "+cs.err.Error(), panelW)) + "\n")
 	}
 
-	b.WriteString(styleSeparator.Render(strings.Repeat("─", w)) + "\n")
+	b.WriteString(styleSeparator.Render(strings.Repeat("─", panelW)) + "\n")
 
 	chrome := 4 // title, head, separator, hint
 	if cs.err != nil && !cs.canceled {
@@ -255,7 +270,7 @@ func (m *model) connPanelView(w int) string {
 
 	lines := cs.lines
 	if len(lines) == 0 {
-		b.WriteString(styleDim.Render(truncate(" waiting for openvpn output…", w)) + "\n")
+		b.WriteString(styleDim.Render(truncate(" waiting for openvpn output…", panelW)) + "\n")
 		avail--
 	} else {
 		m.connClampScroll()
@@ -264,17 +279,21 @@ func (m *model) connPanelView(w int) string {
 			start = 0
 		}
 		for _, l := range lines[start:] {
-			b.WriteString(styleDim.Render(truncate(l, w)) + "\n")
+			b.WriteString(styleDim.Render(truncate(l, panelW)) + "\n")
 		}
 	}
 
 	if m.connBottom > 0 {
-		b.WriteString(styleChecking.Render(truncate(fmt.Sprintf(" ↑ %d older lines hidden", m.connBottom), w)) + "\n")
+		b.WriteString(styleChecking.Render(truncate(fmt.Sprintf(" ↑ %d older lines hidden", m.connBottom), panelW)) + "\n")
 	} else {
-		b.WriteString(styleDim.Render(truncate(" "+m.connHint(), w)) + "\n")
+		b.WriteString(styleDim.Render(truncate(" "+m.connHint(), panelW)) + "\n")
 	}
 
-	return strings.TrimRight(b.String(), "\n")
+	panel := strings.TrimRight(b.String(), "\n")
+	if mv != nil {
+		return sideBySide(panel, strings.Join(mv.lines, "\n"), panelW)
+	}
+	return panel
 }
 
 // connHint is the key hint line for the log panel.

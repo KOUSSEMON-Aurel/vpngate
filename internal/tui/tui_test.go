@@ -281,12 +281,12 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 	if gv == nil {
 		t.Fatal("globeView() returned nil at 140x24")
 	}
-	// 14 rows -> radius 7 -> 2*7+3 = 17 columns.
-	if gv.width != 17 {
-		t.Errorf("globeView width = %d, want 17", gv.width)
+	// 14 rows -> radius 8 -> 2*8+3 = 19 columns.
+	if gv.width != 19 {
+		t.Errorf("globeView width = %d, want 19", gv.width)
 	}
-	if len(gv.lines) != 17 {
-		t.Errorf("globeView has %d lines, want 17", len(gv.lines))
+	if len(gv.lines) != 19 {
+		t.Errorf("globeView has %d lines, want 19", len(gv.lines))
 	}
 
 	pinned := false
@@ -375,6 +375,117 @@ func TestGlobeHiddenWhenShort(t *testing.T) {
 	}
 	if gv := m.globeView(); gv != nil {
 		t.Errorf("globeView() should be nil at height 12, got width %d", gv.width)
+	}
+}
+
+// The globe and the bottom location bar must follow the tunnel exit once a
+// connection is up, not keep pinning the location resolved at startup.
+func TestViewShowsTunnelExitWhileConnected(t *testing.T) {
+	a := testServer("a")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      1,
+		cursorHost: "a",
+		width:      140,
+		height:     24,
+		geo: geoInfo{
+			loaded: true,
+			code:   "BJ",
+			name:   "Benin",
+			city:   "Abomey-Calavi",
+		},
+		connect: &connectState{
+			server:    a, // JP in the server table
+			connected: true,
+			exitIP:    "185.250.249.92",
+			exitCC:    "DE",
+			exitGeo:   "Germany Neu-Anspach",
+		},
+	}
+	out := m.View()
+	for _, want := range []string{"VPN", "🇩🇪", "Germany Neu-Anspach", "via VPN"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("View() while connected missing %q in:\n%s", want, out)
+		}
+	}
+	for _, forbid := range []string{"Benin", "Abomey-Calavi", "YOU"} {
+		if strings.Contains(out, forbid) {
+			t.Errorf("View() while connected still shows %q (startup location) in:\n%s", forbid, out)
+		}
+	}
+}
+
+// Without a verified exit marker the connected UI falls back to the relay's
+// declared country, still labelled as a VPN exit.
+func TestViewShowsRelayCountryFallbackWhileConnected(t *testing.T) {
+	a := testServer("a") // JP / Japan
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      1,
+		cursorHost: "a",
+		width:      140,
+		height:     24,
+		connect: &connectState{
+			server:    a,
+			connected: true,
+		},
+	}
+	out := m.View()
+	for _, want := range []string{"VPN", "🇯🇵", "Japan", "via VPN"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("View() fallback missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+// The connection log panel keeps the globe column on the right and never
+// exceeds the terminal width.
+func TestConnPanelKeepsGlobeColumn(t *testing.T) {
+	a := testServer("a")
+	m := &model{
+		servers: []vpn.Server{a},
+		results: map[string]vpn.ProbeResult{
+			"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+		},
+		mode:       ModeBrowse,
+		round:      1,
+		cursorHost: "a",
+		width:      140,
+		height:     24,
+		geo: geoInfo{
+			loaded: true,
+			code:   "FR",
+			name:   "France",
+			city:   "Paris",
+		},
+		connect: &connectState{
+			server:    a,
+			connected: true,
+			exitIP:    "185.250.249.92",
+			exitCC:    "DE",
+			exitGeo:   "Germany Neu-Anspach",
+			lines:     []string{"[vpngate] connected via " + a.HostName, "[vpngate] exit IP: 185.250.249.92"},
+		},
+		connPanel: true,
+	}
+	out := m.View()
+	for _, want := range []string{"VPN", "🇩🇪", "Germany Neu-Anspach", "exit IP: 185.250.249.92"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("connPanel View() missing %q in:\n%s", want, out)
+		}
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if vw := lipgloss.Width(l); vw > 140 {
+			t.Errorf("connPanel line exceeds 140 columns: %d -> %q", vw, l)
+		}
 	}
 }
 

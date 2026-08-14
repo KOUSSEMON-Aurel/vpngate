@@ -427,6 +427,7 @@ type ipwhoResult struct {
 	IP          string `json:"ip"`
 	Country     string `json:"country"`
 	CountryCode string `json:"country_code"`
+	City        string `json:"city"`
 }
 
 // geoClient is shared by the tunnel checks (verifyTunnel and the health
@@ -481,7 +482,11 @@ func verifyTunnel(emit func(string)) {
 	} else {
 		var g ipwhoResult
 		if jsonErr := json.NewDecoder(io.LimitReader(geoResp.Body, 4096)).Decode(&g); jsonErr == nil && g.CountryCode != "" {
-			emit(fmt.Sprintf("[vpngate] exit: %s · %s %s", g.IP, strings.ToUpper(g.CountryCode), g.Country))
+			payload := fmt.Sprintf("%s · %s %s", g.IP, strings.ToUpper(g.CountryCode), g.Country)
+			if g.City != "" {
+				payload += " " + g.City
+			}
+			emit("[vpngate] exit: " + payload)
 		}
 		_ = geoResp.Body.Close()
 	}

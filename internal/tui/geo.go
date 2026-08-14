@@ -113,6 +113,21 @@ func fetchVpnFlag() bool {
 	return data.Proxy || data.Hosting
 }
 
+// liveGeoInfo returns the location the UI should display right now: the
+// verified tunnel exit while a connection is up, otherwise the location
+// resolved once at startup.
+func (m *model) liveGeoInfo() geoInfo {
+	if m.connect != nil && m.connect.connected {
+		code, name := m.connect.exitCC, m.connect.exitGeo
+		if code == "" {
+			code = m.connect.server.CountryShort
+			name = m.connect.server.CountryLong
+		}
+		return geoInfo{loaded: true, code: code, name: name, vpn: true}
+	}
+	return m.geo
+}
+
 // locLabel renders the human-readable location for the status bar and footer.
 func (g geoInfo) locLabel() string {
 	if !g.loaded {
