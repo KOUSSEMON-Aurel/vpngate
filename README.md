@@ -74,6 +74,13 @@ sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
 ```
 
 > `openvpn` crée une interface réseau : lancez `connect` avec `sudo` ou un utilisateur ayant les droits élevés.
+>
+> **Alternative sans sudo (Linux)** : donnez à openvpn la seule capability nécessaire, une fois pour toutes, puis lancez `connect` normalement (le TUI fonctionne aussi sans sudo) :
+>
+> ```shell
+> sudo setcap cap_net_admin+ep /usr/bin/openvpn
+> vpngate connect --country Japan
+> ```
 
 ### Lister
 
