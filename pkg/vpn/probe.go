@@ -77,8 +77,11 @@ func ParseRemoteFromConfig(base64Data string) (host string, port string, ok bool
 	return "", "", false
 }
 
-// ProbeServer verifies whether a server is actually usable by dialing its
-// TCP port and, if that succeeds, running a real OpenVPN handshake probe.
+// ProbeServer verifies whether a server is actually usable by running a
+// real OpenVPN handshake probe. For TCP relays the port is first cheaply
+// dialed so unreachable hosts fail fast without spawning a process; UDP
+// relays skip that check since dialing a UDP-only port over TCP would
+// always fail.
 func ProbeServer(ctx context.Context, server *Server, timeout time.Duration) ProbeResult {
 	host, port, ok := ParseRemoteFromConfig(server.OpenVpnConfigData)
 	if !ok {
@@ -86,7 +89,7 @@ func ProbeServer(ctx context.Context, server *Server, timeout time.Duration) Pro
 		port = "443"
 	}
 
-	if !reachableTCP(host, port, timeout) {
+	if protocolFromConfig(server.OpenVpnConfigData) == "tcp" && !reachableTCP(host, port, timeout) {
 		return ProbeResult{
 			Status: ProbeUnreachable,
 			Detail: fmt.Sprintf("%s:%s not reachable", host, port),
@@ -94,6 +97,35 @@ func ProbeServer(ctx context.Context, server *Server, timeout time.Duration) Pro
 	}
 
 	return probeOpenVPN(ctx, server, timeout)
+}
+
+// protocolFromConfig returns the transport protocol declared in an
+// OpenVPN config ("tcp" or "udp"), defaulting to "udp" which is what
+// OpenVPN itself assumes when no proto line is present. Both the `proto`
+// directive and a trailing protocol on the `remote` line are honored.
+func protocolFromConfig(base64Data string) string {
+	decoded, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return "udp"
+	}
+	for _, line := range strings.Split(string(decoded), "\n") {
+		line = strings.TrimSpace(strings.ToLower(line))
+		if strings.HasPrefix(line, "proto ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				return strings.TrimSuffix(fields[1], "\r")
+			}
+		}
+		if strings.HasPrefix(line, "remote ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				if proto := strings.TrimSuffix(fields[3], "\r"); proto == "tcp" || proto == "udp" {
+					return proto
+				}
+			}
+		}
+	}
+	return "udp"
 }
 
 // reachableTCP performs a cheap TCP dial so unreachable hosts fail fast

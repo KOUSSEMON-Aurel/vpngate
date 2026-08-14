@@ -3,13 +3,17 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
+	"net/http"
 	"os"
 	osexec "os/exec"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -173,7 +177,7 @@ var connectCmd = &cobra.Command{
 			}
 
 			log.Info().Msgf("Connecting to %s (%s) in %s", serverSelected.HostName, serverSelected.IPAddr, serverSelected.CountryLong)
-			err = connectServer(cmd.Context(), serverSelected, nil)
+			err = connectWithRetry(cmd.Context(), orderedCandidates(*vpnServers, serverSelected, probeResults), nil)
 
 			if !flagReconnect {
 				if err != nil {
@@ -185,10 +189,238 @@ var connectCmd = &cobra.Command{
 	},
 }
 
-// connectServer decodes the server's embedded OpenVPN config, runs openvpn
-// against it until it exits, and streams each output line to emit (when
-// non-nil).
-func connectServer(ctx context.Context, s vpn.Server, emit func(string)) error {
+// connectStartupDeadline is how long a single relay attempt may take to
+// reach "Initialization Sequence Completed" before it is abandoned in
+// favor of the next candidate. Overridable in tests.
+var connectStartupDeadline = 40 * time.Second
+
+// maxConnectAttempts caps how many relays are tried per connect.
+const maxConnectAttempts = 8
+
+// connectWithRetry attempts to establish a tunnel against each candidate
+// relay in order and stops at the first relay that actually initializes a
+// tunnel. A relay that refuses the connection (AUTH_FAILED, which vpngate
+// relays commonly send when they are at capacity) or that fails to
+// initialize within connectStartupDeadline is abandoned and the next
+// candidate is tried. Once a tunnel is up the function blocks until ctx is
+// canceled (the user stops the connection) or the tunnel drops.
+func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(string)) error {
+	if len(candidates) == 0 {
+		return errors.New("no servers to try")
+	}
+
+	attempts := min(len(candidates), maxConnectAttempts)
+	var reasons []string
+
+	for i := 0; i < attempts; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		s := candidates[i]
+
+		if emit != nil {
+			emit(fmt.Sprintf("Connecting to %s (%s) in %s", s.HostName, s.IPAddr, s.CountryLong))
+		}
+		log.Info().Msgf("Attempt %d/%d: connecting to %s (%s)", i+1, attempts, s.HostName, s.IPAddr)
+
+		result := connectAttempt(ctx, s, emit)
+
+		switch {
+		case result.err == nil && ctx.Err() == nil:
+			// Tunnel was up and openvpn exited on its own: that is a
+			// dropped tunnel, report it.
+			reasons = append(reasons, fmt.Sprintf("%s: tunnel dropped", s.HostName))
+		case result.err == nil:
+			// User stopped the connection.
+			return nil
+		case result.authFailed:
+			reasons = append(reasons, fmt.Sprintf("%s: relay refused the connection (likely full)", s.HostName))
+			if emit != nil && i < attempts-1 {
+				emit(fmt.Sprintf("Relay %s refused the connection (AUTH_FAILED, likely full), trying next relay…", s.HostName))
+			}
+		default:
+			reasons = append(reasons, fmt.Sprintf("%s: %v", s.HostName, result.err))
+			if emit != nil && i < attempts-1 {
+				emit(fmt.Sprintf("Relay %s failed (%v), trying next relay…", s.HostName, result.err))
+			}
+		}
+
+		if ctx.Err() != nil {
+			// The user stopped mid-chain or during the last attempt: that
+			// is a stop, not an all-failed report.
+			return ctx.Err()
+		}
+	}
+
+	return fmt.Errorf("all %d attempted relays failed: %s", attempts, strings.Join(reasons, "; "))
+}
+
+// connectAttemptResult is the outcome of a single relay attempt.
+type connectAttemptResult struct {
+	err        error
+	authFailed bool
+}
+
+// connectAttempt runs openvpn against one relay and reports how it went:
+// nil error with authFailed=false means the tunnel came up and stayed up
+// until ctx was canceled or openvpn exited on its own. authFailed is set
+// when the relay sent AUTH_FAILED. Any other error means the relay never
+// produced a working tunnel within the startup deadline or exited
+// abnormally before doing so.
+func connectAttempt(ctx context.Context, s vpn.Server, emit func(string)) connectAttemptResult {
+	attemptCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	tw := &trackedWriter{emit: emit, initDone: make(chan struct{}), authDone: make(chan struct{})}
+
+	runErrCh := make(chan error, 1)
+	go func() { runErrCh <- connectServer(attemptCtx, s, tw) }()
+
+	timer := time.NewTimer(connectStartupDeadline)
+	defer timer.Stop()
+
+	select {
+	case <-tw.initDone:
+		// Tunnel established; hand over to the verification check and
+		// run until openvpn exits or the user stops it.
+		if emit != nil {
+			emit("Tunnel up; verifying connectivity through it…")
+		}
+		go verifyTunnel(emit)
+		err := <-runErrCh
+		if ctx.Err() != nil {
+			// User stop: not an error.
+			return connectAttemptResult{}
+		}
+		return connectAttemptResult{err: err}
+
+	case <-tw.authDone:
+		cancel()
+		<-runErrCh
+		return connectAttemptResult{err: errors.New("relay refused the connection"), authFailed: true}
+
+	case <-timer.C:
+		cancel()
+		<-runErrCh
+		return connectAttemptResult{err: fmt.Errorf("no tunnel within %s", connectStartupDeadline)}
+
+	case <-ctx.Done():
+		// User canceled while connecting. Wait for openvpn to be torn
+		// down so its output can never race with the caller closing the
+		// output stream.
+		cancel()
+		<-runErrCh
+		return connectAttemptResult{err: ctx.Err()}
+	}
+}
+
+// trackedWriter tees openvpn output lines to emit while watching for the
+// markers that decide whether a relay attempt is established or refused.
+type trackedWriter struct {
+	emit     func(string)
+	initDone chan struct{}
+	authDone chan struct{}
+	onceInit sync.Once
+	onceAuth sync.Once
+}
+
+// Write splits p on newlines and delivers each non-empty line to emit,
+// closing the init/auth signal channels when their markers appear.
+func (w *trackedWriter) Write(p []byte) (int, error) {
+	for _, l := range strings.Split(string(p), "\n") {
+		if l == "" {
+			continue
+		}
+		if w.emit != nil {
+			w.emit(l)
+		}
+		switch {
+		case strings.Contains(l, "Initialization Sequence Completed"):
+			w.onceInit.Do(func() { close(w.initDone) })
+		case strings.Contains(l, "AUTH_FAILED"):
+			w.onceAuth.Do(func() { close(w.authDone) })
+		}
+	}
+	return len(p), nil
+}
+
+// verifyTunnel performs an end-to-end check once a tunnel is up: an HTTPS
+// fetch that exercises DNS resolution and egress through the tunnel, plus
+// the tunnel's exit IP. Results are emitted as log lines so the user can
+// see in the live output whether the connection actually carries traffic.
+func verifyTunnel(emit func(string)) {
+	if emit == nil {
+		return
+	}
+	client := &http.Client{Timeout: 12 * time.Second}
+
+	start := time.Now()
+	resp, err := client.Get("https://www.gstatic.com/generate_204")
+	if err != nil {
+		emit(fmt.Sprintf("[vpngate] WARNING: tunnel check failed: no HTTPS through the tunnel (%v)", err))
+		return
+	}
+	_ = resp.Body.Close()
+	ms := time.Since(start).Milliseconds()
+	if resp.StatusCode == http.StatusNoContent {
+		emit(fmt.Sprintf("[vpngate] tunnel verified: HTTPS 204 through the tunnel in %dms", ms))
+	} else {
+		emit(fmt.Sprintf("[vpngate] WARNING: tunnel check returned HTTP %d in %dms", resp.StatusCode, ms))
+	}
+
+	ipResp, err := client.Get("https://api.ipify.org")
+	if err != nil {
+		return
+	}
+	defer func() { _ = ipResp.Body.Close() }()
+	ip, _ := io.ReadAll(io.LimitReader(ipResp.Body, 64))
+	if len(ip) > 0 {
+		emit(fmt.Sprintf("[vpngate] exit IP: %s", strings.TrimSpace(string(ip))))
+	}
+}
+
+// orderedCandidates returns the servers in connection attempt order: the
+// preferred server first (when non-zero), then relays that verified
+// working (lowest probe latency first), then the remaining relays ordered
+// by their vpngate score so the most promising relays are tried first.
+func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[string]vpn.ProbeResult) []vpn.Server {
+	cands := make([]vpn.Server, 0, len(servers))
+	if preferred.HostName != "" {
+		cands = append(cands, preferred)
+	}
+	for _, s := range servers {
+		if s.HostName == preferred.HostName {
+			continue
+		}
+		if r, ok := results[s.HostName]; ok && r.Status == vpn.ProbeWorking {
+			cands = append(cands, s)
+		}
+	}
+	working := cands[1:]
+	sort.SliceStable(working, func(i, j int) bool {
+		ri, rj := results[working[i].HostName], results[working[j].HostName]
+		return ri.LatencyMs < rj.LatencyMs
+	})
+
+	for _, s := range servers {
+		if s.HostName == preferred.HostName {
+			continue
+		}
+		if r, ok := results[s.HostName]; !ok || r.Status != vpn.ProbeWorking {
+			cands = append(cands, s)
+		}
+	}
+	rest := cands[1+len(working):]
+	sort.SliceStable(rest, func(i, j int) bool { return rest[i].Score > rest[j].Score })
+
+	return cands
+}
+
+// connectServer decodes the server's embedded OpenVPN config and runs
+// openvpn against it until it exits, streaming each output line to out
+// (when non-nil). Debug verbosity (--verb 5) can be enabled with
+// VPNGATE_DEBUG.
+func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
 	decodedConfig, err := base64.StdEncoding.DecodeString(s.OpenVpnConfigData)
 	if err != nil {
 		return err
@@ -210,31 +442,14 @@ func connectServer(ctx context.Context, s vpn.Server, emit func(string)) error {
 		return err
 	}
 
-	if emit != nil {
-		emit(fmt.Sprintf("Connecting to %s (%s) in %s", s.HostName, s.IPAddr, s.CountryLong))
-	}
-
-	var out io.Writer
-	if emit != nil {
-		out = lineWriter{emit: emit}
-	}
 	defer func() { _ = os.Remove(tmpfile.Name()) }()
-	return vpn.ConnectContext(ctx, tmpfile.Name(), out)
-}
 
-// lineWriter adapts a line callback into an io.Writer.
-type lineWriter struct {
-	emit func(string)
-}
-
-// Write splits p on newlines and delivers each non-empty line to emit.
-func (w lineWriter) Write(p []byte) (int, error) {
-	for _, l := range strings.Split(string(p), "\n") {
-		if l != "" {
-			w.emit(l)
-		}
+	verb := 4
+	if os.Getenv("VPNGATE_DEBUG") != "" {
+		verb = 5
+		log.Debug().Msgf("debug: connecting with verbosity %d to %s (%s)", verb, s.HostName, s.IPAddr)
 	}
-	return len(p), nil
+	return vpn.ConnectContextWithVerb(ctx, tmpfile.Name(), out, verb)
 }
 
 // runTuiConnect opens the picker and connects to the chosen server inside
@@ -245,7 +460,7 @@ func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
 	defer restore()
 
 	connectFn := func(connCtx context.Context, s vpn.Server, emit func(string)) error {
-		if err := connectServer(connCtx, s, emit); err != nil {
+		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, nil), emit); err != nil {
 			return fmt.Errorf("%w%s", err, privilegeHint(err))
 		}
 		return nil

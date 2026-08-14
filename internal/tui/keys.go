@@ -6,29 +6,65 @@ import (
 )
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// While a connection is live, navigation input is suspended and only
-	// stop/quit keys apply. openvpn receives stdin/logs elsewhere, so no
-	// other key is forwarded. After a failed connection the error screen
-	// is dismissed by any of q/esc/enter.
+	key := msg.String()
+	m.blockMsg = ""
+
+	// While a connection is live the list stays the base view: arrows and
+	// navigation keep working, the left/right arrows toggle the log panel,
+	// q stops the connection and ctrl+c quits.
 	if m.connect != nil {
-		switch msg.String() {
-		case "q", "esc", "enter":
-			if m.connect.err != nil && !m.connect.canceled {
-				m.connect = nil
-			} else {
-				m.stopConnect()
-			}
+		switch key {
 		case "ctrl+c":
 			if m.connect.err != nil && !m.connect.canceled {
 				m.quitting = true
 				return m, tea.Quit
 			}
 			m.stopConnect()
+			return m, m.tickIfNeeded()
+		case "q":
+			if m.connect.err != nil && !m.connect.canceled {
+				m.connect = nil
+				m.connPanel = false
+				m.connBottom = 0
+			} else {
+				m.stopConnect()
+			}
+			return m, m.tickIfNeeded()
+		case "left":
+			m.connPanel = true
+			return m, m.tickIfNeeded()
+		case "right":
+			m.connPanel = false
+			return m, m.tickIfNeeded()
 		}
-		return m, m.tickIfNeeded()
+
+		// Inside the log panel only panel keys apply: arrows scroll, esc or
+		// right returns to the list.
+		if m.connPanel {
+			switch key {
+			case "esc":
+				m.connPanel = false
+			case "up", "k":
+				m.connScroll(1)
+			case "down", "j":
+				m.connScroll(-1)
+			case "pgup", "ctrl+b":
+				m.connScroll(m.visibleRows())
+			case "pgdown", "ctrl+f":
+				m.connScroll(-m.visibleRows())
+			case "home":
+				m.connScrollHome()
+			case "end":
+				m.connScrollEnd()
+			}
+			return m, m.tickIfNeeded()
+		}
+
+		// Outside the panel the list stays fully navigable; Enter on a
+		// different server switches the tunnel target.
 	}
 
-	switch msg.String() {
+	switch key {
 	case "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
@@ -55,11 +91,16 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.tickIfNeeded()
 		}
 		if m.mode == ModeSelect && m.listLen() > 0 {
+			list := m.displayServers()
+			idx := m.cursorIndex()
+			if reason := m.enterBlocked(list[idx]); reason != "" {
+				m.blockMsg = reason
+				return m, m.tickIfNeeded()
+			}
 			if m.connectFn != nil {
 				return m, m.startConnect()
 			}
-			list := m.displayServers()
-			m.selected = &list[m.cursorIndex()]
+			m.selected = &list[idx]
 			return m, tea.Quit
 		}
 		return m, m.tickIfNeeded()
@@ -103,6 +144,26 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, m.tickIfNeeded()
+}
+
+// enterBlocked returns a non-empty reason when Enter must not connect to
+// the given server: servers judged down (unreachable, timeout, auth
+// failure, probe error) are red and cannot be connected to, and servers
+// still being evaluated (checking, or not probed yet) are off-limits until
+// their verdict lands. Working servers are always allowed.
+func (m *model) enterBlocked(s vpn.Server) string {
+	r := m.results[s.HostName]
+	switch r.Status {
+	case vpn.ProbeWorking:
+		return ""
+	case vpn.ProbeChecking, "":
+		return s.HostName + " is still being evaluated — wait for the verdict"
+	case vpn.ProbeAuthFailed:
+		return s.HostName + " refused the connection (relay likely full) — pick a working server"
+	case vpn.ProbeUnreachable, vpn.ProbeTimeout, vpn.ProbeError:
+		return s.HostName + " is down — pick a working server"
+	}
+	return ""
 }
 
 func firstHost(list []vpn.Server) string {

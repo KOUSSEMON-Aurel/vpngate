@@ -96,6 +96,17 @@ type model struct {
 	connect     *connectState
 	connCancel  context.CancelFunc
 	connPipe    chan connMsg
+	// connPanel shows the live connection log panel instead of the list.
+	// It is toggled with the left/right arrows; the list stays the base
+	// view at all times.
+	connPanel bool
+	// connBottom is the scroll offset of the log panel from the newest
+	// line (0 = pinned to the latest output).
+	connBottom int
+	// blockMsg is a transient hint shown in the footer when Enter was
+	// pressed on a server that cannot be connected to (down or still
+	// being evaluated). Cleared on the next key.
+	blockMsg string
 }
 
 // spinnerFrames is a compact braille loader used for servers whose state is

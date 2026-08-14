@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/davegallant/vpngate/pkg/vpn"
 	"github.com/muesli/termenv"
@@ -490,5 +493,189 @@ func TestViewFitsHeightEverySize(t *testing.T) {
 				t.Errorf("%dx%d: title lost from line 0: %q", width, height, got)
 			}
 		}
+	}
+}
+
+// buildModel returns a select-mode model with two working servers and one
+// down server, sized 80x24, ready for key tests.
+func buildModel(connectFn func(ctx context.Context, server vpn.Server, emit func(string)) error) *model {
+	return &model{
+		servers: []vpn.Server{testServer("good"), testServer("bad")},
+		results: map[string]vpn.ProbeResult{
+			"good": {Status: vpn.ProbeWorking, LatencyMs: 20},
+			"bad":  {Status: vpn.ProbeUnreachable},
+		},
+		mode:       ModeSelect,
+		cursorHost: "good",
+		width:      80,
+		height:     24,
+		round:      1,
+		ctx:        context.Background(),
+		connectFn:  connectFn,
+	}
+}
+
+func TestEnterBlockedOnDownServer(t *testing.T) {
+	started := false
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		started = true
+		return nil
+	})
+
+	// Move the cursor to the down server.
+	m.move(1)
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if started {
+		t.Error("connection started on a down server")
+	}
+	if m.blockMsg == "" {
+		t.Error("expected a block message for a down server")
+	}
+	if m.connect != nil {
+		t.Error("no connection state expected")
+	}
+}
+
+func TestEnterBlockedWhileChecking(t *testing.T) {
+	started := false
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		started = true
+		return nil
+	})
+	m.results["good"] = vpn.ProbeResult{Status: vpn.ProbeChecking}
+
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if started {
+		t.Error("connection started while the server is still being evaluated")
+	}
+	if m.blockMsg == "" {
+		t.Error("expected a block message while checking")
+	}
+}
+
+func TestEnterAllowsWorkingServer(t *testing.T) {
+	startedCh := make(chan struct{}, 1)
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		startedCh <- struct{}{}
+		<-ctx.Done()
+		return nil
+	})
+
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case <-startedCh:
+	case <-time.After(2 * time.Second):
+		t.Error("connection not started on a working server")
+	}
+	if m.connect == nil || m.connect.server.HostName != "good" {
+		t.Errorf("connect state missing or wrong server: %+v", m.connect)
+	}
+	if m.connPanel {
+		t.Error("list must stay the base view after Enter")
+	}
+}
+
+func TestLeftRightTogglesLogPanel(t *testing.T) {
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		<-ctx.Done()
+		return nil
+	})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Left opens the panel.
+	m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if !m.connPanel {
+		t.Error("left arrow did not open the log panel")
+	}
+
+	// The panel view shows the log content; the list view does not.
+	m.connect.lines = []string{"Initialization Sequence Completed", "tunnel verified: HTTPS 204"}
+	if !strings.Contains(m.View(), "Initialization Sequence Completed") {
+		t.Error("panel view does not render log lines")
+	}
+
+	// Right closes the panel back to the list.
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.connPanel {
+		t.Error("right arrow did not close the log panel")
+	}
+	if strings.Contains(m.View(), "Initialization Sequence Completed") {
+		t.Error("list view must not render log lines")
+	}
+	if !strings.Contains(m.View(), "good") {
+		t.Error("list view must remain visible after closing the panel")
+	}
+}
+
+func TestConnectedRowGetsMarker(t *testing.T) {
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		<-ctx.Done()
+		return nil
+	})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.connect.connected = true
+	m.connect.lines = []string{"Initialization Sequence Completed"}
+
+	view := m.View()
+	if !strings.Contains(view, "▶") {
+		t.Error("connected row should show the ▶ marker")
+	}
+	if !strings.Contains(view, "connected") {
+		t.Error("footer should show the connected status")
+	}
+}
+
+func TestStopClearsConnectionState(t *testing.T) {
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		<-ctx.Done()
+		return nil
+	})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.connect.connected = true
+	m.connPanel = true
+
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if m.connect == nil || !m.connect.canceled {
+		t.Error("q should request a stop and keep state until openvpn exits")
+	}
+
+	// Once openvpn has exited, the done message clears the state and the
+	// panel, returning the user to the bare list.
+	nm, _ := m.Update(connMsg{done: true})
+	if nm.(*model).connect != nil {
+		t.Error("done message must clear the connection state")
+	}
+	if nm.(*model).connPanel {
+		t.Error("done message must close the log panel")
+	}
+}
+
+func TestPanelScrollClamps(t *testing.T) {
+	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+		<-ctx.Done()
+		return nil
+	})
+	m.connect = &connectState{server: m.servers[0]}
+	m.connect.lines = []string{"l1", "l2", "l3"}
+
+	m.connScroll(5)
+	if m.connBottom != 2 {
+		t.Errorf("scroll past top clamped to %d, want 2", m.connBottom)
+	}
+	m.connScroll(-10)
+	if m.connBottom != 0 {
+		t.Errorf("scroll past bottom clamped to %d, want 0", m.connBottom)
+	}
+	m.connScrollHome()
+	if m.connBottom != 2 {
+		t.Errorf("home should jump to the oldest line, got %d", m.connBottom)
+	}
+	m.connScrollEnd()
+	if m.connBottom != 0 {
+		t.Errorf("end should pin to the newest line, got %d", m.connBottom)
 	}
 }

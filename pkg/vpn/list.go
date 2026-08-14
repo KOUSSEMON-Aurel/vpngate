@@ -18,7 +18,10 @@ import (
 )
 
 const (
-	httpClientTimeout = 30 * time.Second
+	// httpClientTimeout must be generous: the vpngate relay list is a
+	// multi-megabyte download that frequently crawls at well under
+	// 100 KB/s, and a tight timeout made fetching fail in practice.
+	httpClientTimeout = 120 * time.Second
 	dialTimeout       = 10 * time.Second
 	fetchRetryDelay   = time.Second
 	fetchRetryCount   = 3
@@ -169,7 +172,7 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 		log.Info().Msg("The vpn server list cache has expired")
 	}
 
-	log.Info().Msg("Fetching the latest server list")
+	log.Info().Msg("Fetching the latest server list (the download can take a while)")
 
 	client, err := createHTTPClient(httpProxy, socks5Proxy)
 	if err != nil {

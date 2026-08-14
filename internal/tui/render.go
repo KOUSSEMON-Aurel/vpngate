@@ -30,9 +30,11 @@ func (m *model) View() string {
 		h = 24
 	}
 
-	// An in-TUI connection replaces the whole frame with a live log view.
-	if m.connect != nil {
-		return m.connectView(w)
+	// The connection log panel replaces the list body but keeps the title
+	// bar, and is toggled with the left/right arrows. The list remains the
+	// base view at all times.
+	if m.connect != nil && m.connPanel {
+		return m.connPanelView(w)
 	}
 
 	list := m.displayServers()
@@ -359,7 +361,20 @@ func (m *model) row(s vpn.Server, i int, w int) string {
 
 	selected := m.cursorIndex() == i
 	marker := " "
-	if selected {
+	// A live connection pins a marker to its server's row so the tunnel's
+	// target is visible while browsing the list.
+	if m.connect != nil && m.connect.server.HostName == s.HostName {
+		switch status, st := m.connStatus(); status {
+		case "connected":
+			marker = styleWorking.Render("▶")
+		case "failed":
+			marker = styleDown.Render("✖")
+		case "stopping…":
+			marker = styleWarn.Render("◼")
+		default:
+			marker = st.Render(spinnerFrames[m.spin])
+		}
+	} else if selected {
 		marker = styleHeader.Render("▸")
 	}
 
@@ -457,6 +472,19 @@ func (m *model) footer(w int) string {
 	var b strings.Builder
 	if m.searching {
 		b.WriteString(" search: " + m.filter + "▌  [esc] clear")
+	} else if m.blockMsg != "" {
+		b.WriteString(styleWarn.Render(" ⚠ " + m.blockMsg))
+	} else if m.connect != nil && !m.connPanel {
+		status, st := m.connStatus()
+		s := m.connect.server
+		b.WriteString(" ")
+		b.WriteString(st.Render("● " + status))
+		b.WriteString(styleDim.Render(fmt.Sprintf(" %s", s.HostName)))
+		if m.connect.connected {
+			b.WriteString(styleDim.Render(fmt.Sprintf(" (%s)", s.IPAddr)))
+		}
+		b.WriteString(styleDim.Render("  [←] logs"))
+		b.WriteString(styleDim.Render("  [q] stop"))
 	} else {
 		b.WriteString(" [↑/↓ j/k] move")
 		if m.mode == ModeSelect {

@@ -187,9 +187,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.tickIfNeeded()
 		}
 		if msg.done {
-			// A user-cancel returns straight to the picker. A failure
-			// keeps the connection screen with the error visible until
-			// dismissed (q/esc/enter).
+			// A user-cancel returns straight to the list. A failure keeps
+			// the connection state (marker and footer show it) until the
+			// user clears it with q; the log panel holds the full error.
 			if msg.err != nil && !m.connect.canceled {
 				m.connect.err = msg.err
 				m.connPipe = nil
@@ -199,6 +199,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connPipe = nil
 			m.connCancel = nil
 			m.connect = nil
+			m.connPanel = false
+			m.connBottom = 0
 			return m, m.tickIfNeeded()
 		}
 		if msg.line != "" {

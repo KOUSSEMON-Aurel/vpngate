@@ -7,6 +7,7 @@ import (
 	"net"
 	osexec "os/exec"
 	"runtime"
+	"strconv"
 	"syscall"
 
 	"github.com/davegallant/vpngate/pkg/exec"
@@ -31,7 +32,13 @@ func Connect(configPath string) error {
 // output stream: when ctx is canceled openvpn is killed, and each output
 // line is written to out (when non-nil) as it is produced.
 func ConnectContext(ctx context.Context, configPath string, out io.Writer) error {
-	return exec.RunContext(ctx, executablePath(), ".", out, "--verb", "4", "--config", configPath, "--data-ciphers", "AES-128-CBC")
+	return ConnectContextWithVerb(ctx, configPath, out, 4)
+}
+
+// ConnectContextWithVerb is ConnectContext with an explicit openvpn
+// verbosity level.
+func ConnectContextWithVerb(ctx context.Context, configPath string, out io.Writer, verb int) error {
+	return exec.RunContext(ctx, executablePath(), ".", out, "--verb", strconv.Itoa(verb), "--config", configPath, "--data-ciphers", "AES-128-CBC")
 }
 
 // ConnectDetached starts openvpn with a management interface enabled at
