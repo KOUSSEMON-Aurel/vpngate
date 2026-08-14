@@ -378,3 +378,56 @@ func TestDisplayServersOrderStableWithinRound(t *testing.T) {
 		t.Fatalf("expected new fastest first after round advance, got %v", third)
 	}
 }
+
+// TestViewFitsHeightEverySize asserts the responsive invariant: at any real
+// terminal height the rendered frame is never taller than the terminal, the
+// title bar always stays on line 0, and at least one list row is visible. As
+// the terminal shrinks the least important chrome (geo bar, footer, detail,
+// blank, header, separator, status) is hidden rather than overflowed.
+func TestViewFitsHeightEverySize(t *testing.T) {
+	servers := []vpn.Server{}
+	for i := 0; i < 30; i++ {
+		servers = append(servers, testServer(string(rune('a'+i))))
+	}
+	results := map[string]vpn.ProbeResult{}
+	for _, s := range servers {
+		results[s.HostName] = vpn.ProbeResult{Status: vpn.ProbeWorking, LatencyMs: 42}
+	}
+
+	for height := 3; height <= 40; height++ {
+		for _, width := range []int{30, 50, 80, 140} {
+			m := &model{
+				servers:    servers,
+				results:    results,
+				mode:       ModeBrowse,
+				round:      1,
+				cursorHost: "a",
+				width:      width,
+				height:     height,
+				globeRot:   0,
+				geo: geoInfo{
+					loaded: true,
+					code:   "JP",
+					name:   "Japan",
+					city:   "Tokyo",
+				},
+			}
+			fl := m.frameLayout()
+			if got := fl.rows; got < 1 {
+				t.Errorf("%dx%d: rows %d < 1", width, height, got)
+			}
+			frameH := frameHeight(fl)
+			if frameH > height {
+				t.Errorf("%dx%d: frame height %d > terminal %d (\n%+v)", width, height, frameH, height, fl)
+			}
+
+			lines := strings.Split(strings.TrimRight(m.View(), "\n"), "\n")
+			if len(lines) > height {
+				t.Errorf("%dx%d: View() emitted %d lines, terminal is %d", width, height, len(lines), height)
+			}
+			if got := lines[0]; !strings.Contains(got, "vpngate") {
+				t.Errorf("%dx%d: title lost from line 0: %q", width, height, got)
+			}
+		}
+	}
+}

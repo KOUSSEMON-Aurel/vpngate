@@ -32,11 +32,16 @@ func (m *model) View() string {
 
 	list := m.displayServers()
 	m.ensureOffset(len(list))
+	fl := m.frameLayout()
 
 	var b strings.Builder
 	b.WriteString(m.titleBar(w))
-	b.WriteString(m.statusBar(w))
-	b.WriteString(styleSeparator.Render(strings.Repeat("─", w)) + "\n")
+	if fl.status {
+		b.WriteString(m.statusBar(w))
+	}
+	if fl.sep {
+		b.WriteString(styleSeparator.Render(strings.Repeat("─", w)) + "\n")
+	}
 
 	mv := m.globeView()
 	bodyW := w
@@ -48,32 +53,146 @@ func (m *model) View() string {
 		}
 	}
 
-	body := m.body(list, h, bodyW)
+	body := m.body(list, fl, bodyW)
 	if mv != nil {
 		body = sideBySide(body, strings.Join(mv.lines, "\n"), bodyW)
 	}
 	b.WriteString(body)
-	b.WriteString(m.footer(w))
-	b.WriteString(m.geoBar(w))
+	if fl.footer {
+		b.WriteString(m.footer(w))
+	}
+	if fl.geoBar {
+		b.WriteString(m.geoBar(w))
+	}
 
 	// bubbletea's renderer splits View() output on "\n" and, when it is
 	// taller than the terminal, drops lines from the TOP to fit. A trailing
 	// newline would create an empty last split line, pushing the title bar
 	// into the dropped region. Trim it so the frame is exactly h lines.
+	// frameLayout() already trims chrome so the frame never exceeds h, but
+	// the TrimRight keeps the final line from being an empty void.
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// body renders the column header, the visible rows and, when the terminal is
-// tall enough, the detail pane for the selected server.
-func (m *model) body(list []vpn.Server, h, w int) string {
+// frameLayout describes which chrome lines fit at the current terminal height
+// and how many list rows remain. Terminal chrome (title, status, separator,
+// column header, blank spacer, detail pane, footer, location bar) costs a
+// fixed number of lines each. As the terminal shrinks, the least important
+// chrome is dropped so that at least one list row always fits and the total
+// frame never exceeds the height (which would make bubbletea drop the title
+// from the top).
+type frameLayout struct {
+	rows   int
+	title  bool
+	status bool
+	sep    bool
+	header bool
+	blank  bool
+	detail bool
+	footer bool
+	geoBar bool
+}
+
+func (m *model) frameLayout() frameLayout {
+	h := m.height
+	if h <= 0 {
+		h = 24
+	}
+	fl := frameLayout{
+		title:  true,
+		status: true,
+		sep:    true,
+		header: true,
+		blank:  true,
+		detail: h >= 16,
+		footer: true,
+		geoBar: true,
+	}
+	// On every pass, drop the least important chrome until a row fits or
+	// nothing is left to drop.
+	for {
+		fl.rows = h - frameChrome(fl)
+		if fl.rows >= 1 {
+			break
+		}
+		switch {
+		case fl.geoBar:
+			fl.geoBar = false
+		case fl.footer:
+			fl.footer = false
+		case fl.blank:
+			fl.blank = false
+		case fl.detail:
+			fl.detail = false
+		case fl.header:
+			fl.header = false
+		case fl.sep:
+			fl.sep = false
+		case fl.status:
+			fl.status = false
+		case fl.title:
+			fl.title = false
+		default:
+			break
+		}
+	}
+	if fl.rows < 1 {
+		fl.rows = 1
+	}
+	return fl
+}
+
+// frameHeight is the total rendered lines for a layout (chrome + rows). At any
+// real terminal height frameLayout() guarantees this stays <= the height so the
+// title is never pushed off the top.
+func frameHeight(fl frameLayout) int {
+	return frameChrome(fl) + fl.rows
+}
+
+// frameChrome counts the non-list lines the frame currently needs.
+func frameChrome(fl frameLayout) int {
+	n := 0
+	if fl.title {
+		n++
+	}
+	if fl.status {
+		n++
+	}
+	if fl.sep {
+		n++
+	}
+	if fl.header {
+		n++
+	}
+	if fl.blank {
+		n++
+	}
+	if fl.detail {
+		n += 3
+	}
+	if fl.footer {
+		n++
+	}
+	if fl.geoBar {
+		n++
+	}
+	return n
+}
+
+// body renders the column header, the visible rows and, when the layout has
+// room, the detail pane for the selected server.
+func (m *model) body(list []vpn.Server, fl frameLayout, w int) string {
 	var b strings.Builder
-	b.WriteString(m.columnHeader(w))
-	rows := m.visibleRows()
-	for i := m.offset; i < len(list) && i < m.offset+rows; i++ {
+	if fl.header {
+		b.WriteString(m.columnHeader(w))
+	}
+	for i := m.offset; i < len(list) && i < m.offset+fl.rows; i++ {
 		b.WriteString(m.row(list[i], i, w))
 	}
-	b.WriteString("\n")
-	if h >= 16 {
+	if fl.blank {
+		b.WriteString("\n")
+	}
+	if fl.detail {
 		b.WriteString(m.detailPane(w))
 	}
 	return b.String()
@@ -271,7 +390,7 @@ func (m *model) row(s vpn.Server, i int, w int) string {
 func (m *model) detailPane(w int) string {
 	list := m.displayServers()
 	if len(list) == 0 {
-		return styleDim.Render(truncate("  no servers match", w)) + "\n\n"
+		return styleDim.Render(truncate("  no servers match", w)) + "\n\n\n"
 	}
 	idx := m.cursorIndex()
 	if idx >= len(list) {

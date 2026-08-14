@@ -130,21 +130,7 @@ func (m *model) cursorIndex() int {
 }
 
 func (m *model) visibleRows() int {
-	h := m.height
-	switch {
-	case h <= 10:
-		rows := h - 7
-		if rows < 1 {
-			rows = 1
-		}
-		return rows
-	case h <= 15:
-		// No detail pane: frame = 7 chrome lines + rows.
-		return h - 7
-	default:
-		// Detail pane (3 lines): frame = 10 chrome lines + rows.
-		return h - 10
-	}
+	return m.frameLayout().rows
 }
 
 // ensureOffset keeps the cursor row visible after the list re-sorts or the
