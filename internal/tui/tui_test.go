@@ -277,7 +277,7 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 	if gv == nil {
 		t.Fatal("globeView() returned nil at 140x24")
 	}
-	// 15 rows -> radius 7 -> 2*7+3 = 17 columns.
+	// 14 rows -> radius 7 -> 2*7+3 = 17 columns.
 	if gv.width != 17 {
 		t.Errorf("globeView width = %d, want 17", gv.width)
 	}

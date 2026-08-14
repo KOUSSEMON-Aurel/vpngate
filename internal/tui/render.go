@@ -13,6 +13,14 @@ func (m *model) View() string {
 		return ""
 	}
 
+	// bubbletea renders before the first WindowSizeMsg arrives. At that
+	// point our size is still 0, so falling back to a guessed width/height
+	// would emit lines wider than the terminal and wrap/scroll the whole
+	// screen out of alignment. Hold the frame until the real size is known.
+	if m.height == 0 {
+		return ""
+	}
+
 	w := m.width
 	if w <= 0 {
 		w = 100
@@ -47,7 +55,12 @@ func (m *model) View() string {
 	b.WriteString(body)
 	b.WriteString(m.footer(w))
 	b.WriteString(m.geoBar(w))
-	return b.String()
+
+	// bubbletea's renderer splits View() output on "\n" and, when it is
+	// taller than the terminal, drops lines from the TOP to fit. A trailing
+	// newline would create an empty last split line, pushing the title bar
+	// into the dropped region. Trim it so the frame is exactly h lines.
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // body renders the column header, the visible rows and, when the terminal is

@@ -92,7 +92,12 @@ func (m *model) globeView() *globeView {
 	if m.width < 80 || rows < 7 {
 		return nil
 	}
+	// The globe is sized to the room left after the column header, the
+	// blank line and - when shown - the 3-line detail pane.
 	r := (rows - 1) / 2
+	if m.height >= 16 {
+		r = (rows + 2) / 2
+	}
 	if r > 7 {
 		r = 7
 	}
