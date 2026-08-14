@@ -281,9 +281,11 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 	if gv == nil {
 		t.Fatal("globeView() returned nil at 140x24")
 	}
-	// 14 rows -> radius 8 -> 2*8+3 = 19 columns.
-	if gv.width != 19 {
-		t.Errorf("globeView width = %d, want 19", gv.width)
+	// 14 rows -> radius 8 -> disc 2*8+3 = 19 columns; the list body is capped
+	// at its natural 90 columns, so the globe column is 140-90-1 = 49 with
+	// the disc centred inside it.
+	if gv.width != 49 {
+		t.Errorf("globeView width = %d, want 49", gv.width)
 	}
 	if len(gv.lines) != 19 {
 		t.Errorf("globeView has %d lines, want 19", len(gv.lines))
@@ -460,7 +462,7 @@ func TestViewShowsRelayCountryFallbackWhileConnected(t *testing.T) {
 func TestGlobeGrowsWithTerminal(t *testing.T) {
 	big := &model{
 		width:   200,
-		height:  36, // rows 26 -> radius 14 (height-capped)
+		height:  36, // rows 26 -> radius 14 -> disc 31
 		servers: []vpn.Server{testServer("a")},
 		results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
 	}
@@ -468,8 +470,25 @@ func TestGlobeGrowsWithTerminal(t *testing.T) {
 	if gv == nil {
 		t.Fatal("globeView() nil at 200x36")
 	}
-	if gv.width != 31 { // 2*14 + 3
-		t.Errorf("globeView width = %d, want 31 at 200x36", gv.width)
+	// Long rows outgrow the list's natural width, so every extra column up
+	// to the frame height becomes globe column: 200-90-1.
+	if gv.width != 109 {
+		t.Errorf("globeView width = %d, want 109 at 200x36", gv.width)
+	}
+	if len(gv.lines) != 31 { // body height at 36 rows
+		t.Errorf("globeView has %d lines, want 31 at 200x36", len(gv.lines))
+	}
+
+	reallyBig := &model{
+		width:   210,
+		height:  50, // rows 40 -> disc fills the whole body height
+		servers: []vpn.Server{testServer("a")},
+		results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
+	}
+	if gv := reallyBig.globeView(); gv == nil {
+		t.Error("globeView() nil at 210x50")
+	} else if gv.width != 119 { // 210-90-1
+		t.Errorf("globeView width = %d, want 119 at 210x50", gv.width)
 	}
 
 	narrow := &model{

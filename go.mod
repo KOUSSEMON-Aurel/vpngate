@@ -9,6 +9,7 @@ require (
 	github.com/jszwec/csvutil v1.10.0
 	github.com/juju/errors v1.0.0
 	github.com/mattn/go-isatty v0.0.20
+	github.com/muesli/termenv v0.16.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
@@ -40,7 +41,6 @@ require (
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
 	github.com/olekukonko/errors v1.2.0 // indirect
 	github.com/olekukonko/ll v0.1.6 // indirect

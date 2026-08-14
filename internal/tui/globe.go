@@ -100,9 +100,6 @@ func (m *model) globeRadius() int {
 	if m.height < 16 {
 		r = (rows - 1) / 2
 	}
-	if r > 14 {
-		r = 14
-	}
 	if rw := (m.width - minListW) / 2; r > rw {
 		r = rw
 	}
@@ -127,6 +124,19 @@ func (m *model) globeView() *globeView {
 		return nil
 	}
 	width := 2*r + 3
+	// The list body has a natural width (~90 columns); beyond that its rows
+	// stop growing, so the leftover width belongs to the globe column. The
+	// disc is then centred in that column instead of hugging the list, which
+	// keeps a wide terminal from showing a giant empty band on the right.
+	listW := m.width - width - 1
+	if listW > listNaturalW {
+		listW = listNaturalW
+	}
+	colW := m.width - listW - 1
+	leftPad := 0
+	if colW > width {
+		leftPad = (colW - width) / 2
+	}
 
 	lon0 := float64(m.globeRot % 360)
 	phi0, lam0 := 15*math.Pi/180, lon0*math.Pi/180
@@ -255,7 +265,11 @@ func (m *model) globeView() *globeView {
 
 	pad := lipgloss.NewStyle()
 	for i, l := range lines {
-		lines[i] = pad.Width(width).Render(truncate(l, width))
+		l = truncate(l, width)
+		if leftPad > 0 {
+			l = strings.Repeat(" ", leftPad) + l
+		}
+		lines[i] = pad.Width(colW).Render(l)
 	}
 
 	// Vertically centre the globe in the list body column so it does not hug
@@ -265,15 +279,15 @@ func (m *model) globeView() *globeView {
 		if bodyH := m.bodyHeight(); bodyH > len(lines) {
 			padTop := (bodyH - len(lines)) / 2
 			for i := 0; i < padTop; i++ {
-				lines = append([]string{pad.Width(width).Render("")}, lines...)
+				lines = append([]string{pad.Width(colW).Render("")}, lines...)
 			}
 			for len(lines) < bodyH {
-				lines = append(lines, pad.Width(width).Render(""))
+				lines = append(lines, pad.Width(colW).Render(""))
 			}
 		}
 	}
 
-	m.globeCache = &globeView{lines: lines, width: width}
+	m.globeCache = &globeView{lines: lines, width: colW}
 	return m.globeCache
 }
 

@@ -140,9 +140,11 @@ var (
 
 // Column widths for the fixed-width fields; the hostname takes the rest.
 const (
-	colStatusW  = 12 // "unreachable" + space
-	colLatencyW = 9  // "2414ms" + space
-	colScoreW   = 8
-	colCountryW = 13 // flag (2) + space + 9 runes + space
-	minListW    = 44 // minimum columns the server list keeps beside the globe
+	colStatusW   = 12 // "unreachable" + space
+	colLatencyW  = 9  // "2414ms" + space
+	colScoreW    = 8
+	colCountryW  = 13 // flag (2) + space + 9 runes + space
+	minListW     = 44 // minimum columns the server list keeps beside the globe
+	listNaturalW = 90 // max columns the list body actually uses; beyond it the
+	//                      leftover width belongs to the globe column
 )
