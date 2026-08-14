@@ -21,7 +21,7 @@ const (
 	httpClientTimeout = 30 * time.Second
 	dialTimeout       = 10 * time.Second
 	fetchRetryDelay   = time.Second
-	fetchRetryCount   = 5
+	fetchRetryCount   = 3
 )
 
 // vpnList is the URL of the vpngate server list API. It is a var so tests
@@ -209,6 +209,15 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 	})
 
 	if err != nil {
+		if opts.NoCache {
+			return nil, err
+		}
+		// Fall back to whatever is cached, even if stale, rather than
+		// failing outright when the remote list cannot be fetched.
+		if servers, cacheErr := getVpnListCache(); cacheErr == nil {
+			log.Warn().Msgf("Using cached vpn server list after fetch failure: %s", err)
+			return servers, nil
+		}
 		return nil, err
 	}
 

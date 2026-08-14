@@ -19,14 +19,14 @@ const (
 )
 
 var (
-	flagCountry          string
-	flagMaxPing          int
-	flagMinScore         int
-	flagSort             string
-	flagOutput           string
-	flagRefresh          bool
-	flagNoCache          bool
-	flagHealthCheck      bool
+	flagCountry           string
+	flagMaxPing           int
+	flagMinScore          int
+	flagSort              string
+	flagOutput            string
+	flagRefresh           bool
+	flagNoCache           bool
+	flagHealthCheck       bool
 	flagHealthConcurrency int
 )
 

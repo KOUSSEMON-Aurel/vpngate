@@ -2,12 +2,18 @@ package exec
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/rs/zerolog/log"
 )
+
+// tailLines is the number of trailing output lines kept for failure
+// reporting.
+const tailLines = 8
 
 // Run executes a command in workDir and logs its output.
 // If the command fails to start or setup fails, an error is logged and returned.
@@ -47,15 +53,16 @@ func Run(path string, workDir string, args ...string) error {
 	// fills the unread pipe's OS buffer before the read one reaches EOF.
 	var wg sync.WaitGroup
 	var stdoutErr, stderrErr error
+	var stdoutTail, stderrTail []string
 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		stdoutErr = logLines(stdout)
+		stdoutErr = logLines(stdout, &stdoutTail)
 	}()
 	go func() {
 		defer wg.Done()
-		stderrErr = logLines(stderr)
+		stderrErr = logLines(stderr, &stderrTail)
 	}()
 	wg.Wait()
 
@@ -68,15 +75,47 @@ func Run(path string, workDir string, args ...string) error {
 		return stderrErr
 	}
 
-	// cmd.Wait() returns an error if the command exits with non-zero status
-	// We return this without logging since it's expected behavior for some commands
-	return cmd.Wait()
+	// cmd.Wait() returns an error if the command exits with non-zero status.
+	// We return this without logging since it's expected behavior for some
+	// commands, but append the tail of the command's output so callers can
+	// surface the underlying reason.
+	if err := cmd.Wait(); err != nil {
+		if msg := tailMessage(stdoutTail, stderrTail); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
 }
 
-func logLines(r io.Reader) error {
+// logLines streams lines from r through a debug log, keeping a capped
+// ring of the most recent lines for failure reporting.
+func logLines(r io.Reader, tail *[]string) error {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		log.Debug().Msg(scanner.Text())
+		line := scanner.Text()
+		log.Debug().Msg(line)
+		*tail = append(*tail, line)
+		if len(*tail) > tailLines {
+			*tail = (*tail)[1:]
+		}
 	}
 	return scanner.Err()
+}
+
+// tailMessage joins the trailing output of a failed command into a single
+// line, or returns "" when there is nothing useful to report.
+func tailMessage(stdoutTail, stderrTail []string) string {
+	lines := append(append([]string{}, stdoutTail...), stderrTail...)
+	clean := make([]string, 0, len(lines))
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l != "" {
+			clean = append(clean, l)
+		}
+	}
+	if len(clean) > tailLines {
+		clean = clean[len(clean)-tailLines:]
+	}
+	return strings.Join(clean, " | ")
 }

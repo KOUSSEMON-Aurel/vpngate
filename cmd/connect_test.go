@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/davegallant/vpngate/pkg/daemon"
@@ -77,4 +78,13 @@ func TestForwardableConnectArgs(t *testing.T) {
 func TestTailLogMissingFile(t *testing.T) {
 	t.Setenv(daemon.DirEnvVar, t.TempDir())
 	assert.Equal(t, "", tailLog())
+}
+
+// TestPrivilegeHint verifies the sudo hint is appended for openvpn tun
+// permission failures and absent otherwise.
+func TestPrivilegeHint(t *testing.T) {
+	permissionErr := errors.New("exit status 1: ERROR: Cannot ioctl TUNSETIFF tun: Operation not permitted (errno=1)")
+	assert.Contains(t, privilegeHint(permissionErr), "sudo")
+	otherErr := errors.New("exit status 1: TLS handshake failed")
+	assert.Equal(t, "", privilegeHint(otherErr))
 }

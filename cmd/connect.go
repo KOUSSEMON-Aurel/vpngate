@@ -19,18 +19,18 @@ import (
 )
 
 var (
-	flagRandom            bool
-	flagReconnect         bool
-	flagProxy             string
-	flagSocks5Proxy       string
-	flagDaemon            bool
-	flagDaemonRun         bool
-	flagDaemonHostname    string
-	flagBest              bool
-	flagTUI               bool
-	flagHealthTimeout     time.Duration
-	flagWatch             bool
-	flagWatchInterval     time.Duration
+	flagRandom         bool
+	flagReconnect      bool
+	flagProxy          string
+	flagSocks5Proxy    string
+	flagDaemon         bool
+	flagDaemonRun      bool
+	flagDaemonHostname string
+	flagBest           bool
+	flagTUI            bool
+	flagHealthTimeout  time.Duration
+	flagWatch          bool
+	flagWatchInterval  time.Duration
 )
 
 func init() {
@@ -196,7 +196,7 @@ var connectCmd = &cobra.Command{
 
 			if !flagReconnect {
 				if err != nil {
-					return fmt.Errorf("vpn connection failed: %w", err)
+					return fmt.Errorf("vpn connection failed: %w%s", err, privilegeHint(err))
 				}
 				return nil
 			}
@@ -363,6 +363,17 @@ func countryFlag(countryShort string) string {
 		flag.WriteRune(0x1F1E6 + (r - 'A'))
 	}
 	return flag.String()
+}
+
+// privilegeHint returns a hint about running with elevated privileges when
+// the failure looks like openvpn could not create the tun interface, or an
+// empty string otherwise.
+func privilegeHint(err error) string {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "tunsetiff") || strings.Contains(msg, "not permitted") || strings.Contains(msg, "permission denied") {
+		return " (openvpn needs elevated privileges to create a tun interface; re-run with sudo, e.g. 'sudo vpngate connect')"
+	}
+	return ""
 }
 
 // extractHostname extracts the hostname from a manually provided argument or legacy selection string.
