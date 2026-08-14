@@ -17,46 +17,100 @@ type geoInfo struct {
 	name   string // full country name, e.g. "France"
 	region string
 	city   string
+	lat    float64 // exact coordinates from the geolocation API
+	lon    float64
+	vpn    bool // true when the public IP is a VPN/proxy/datacenter exit
 	err    error
 }
 
 // geoMsg carries the result of the async geolocation lookup.
 type geoMsg geoInfo
 
-// geoCmd resolves the user's public location without blocking the TUI.
+// geoCmd resolves the user's public location without blocking the TUI. It
+// combines ipwho.is (country, city, exact coordinates) with ip-api.com
+// (proxy/hosting flags) so a VPN exit shows up as a distinct marker colour
+// instead of silently looking like the user's real ISP.
 func geoCmd() tea.Cmd {
 	return func() tea.Msg {
-		client := &http.Client{Timeout: 4 * time.Second}
-		req, err := http.NewRequest(http.MethodGet,
-			"https://ipwho.is/", nil)
-		if err != nil {
-			return geoMsg{loaded: true, err: err}
+		type geoResult struct {
+			info geoInfo
+			vpn  bool
 		}
-		req.Header.Set("User-Agent", "vpngate-tui/1.0")
-		resp, err := client.Do(req)
-		if err != nil {
-			return geoMsg{loaded: true, err: err}
+		ch := make(chan geoResult, 2)
+		go func() { ch <- geoResult{info: fetchGeo()} }()
+		go func() { ch <- geoResult{vpn: fetchVpnFlag()} }()
+
+		g := geoResult{}
+		for i := 0; i < 2; i++ {
+			r := <-ch
+			if r.info.code != "" {
+				g.info = r.info
+			}
+			g.vpn = g.vpn || r.vpn
 		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return geoMsg{loaded: true, err: fmt.Errorf("geo lookup: http %d", resp.StatusCode)}
+		g.info.vpn = g.vpn
+		if g.info.code == "" && g.info.err == nil {
+			g.info.err = fmt.Errorf("geo lookup: no location")
 		}
-		var data struct {
-			Success     bool   `json:"success"`
-			Country     string `json:"country"`
-			CountryCode string `json:"country_code"`
-			Region      string `json:"region"`
-			City        string `json:"city"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return geoMsg{loaded: true, err: err}
-		}
-		if !data.Success || data.CountryCode == "" {
-			return geoMsg{loaded: true, err: fmt.Errorf("geo lookup: no location")}
-		}
-		return geoMsg{loaded: true, code: data.CountryCode, name: data.Country,
-			region: data.Region, city: data.City}
+		g.info.loaded = true
+		return geoMsg(g.info)
 	}
+}
+
+// fetchGeo calls ipwho.is for country/city and exact coordinates.
+func fetchGeo() geoInfo {
+	client := &http.Client{Timeout: 4 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "https://ipwho.is/", nil)
+	if err != nil {
+		return geoInfo{loaded: true, err: err}
+	}
+	req.Header.Set("User-Agent", "vpngate-tui/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return geoInfo{loaded: true, err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return geoInfo{loaded: true, err: fmt.Errorf("geo lookup: http %d", resp.StatusCode)}
+	}
+	var data struct {
+		Success     bool    `json:"success"`
+		Country     string  `json:"country"`
+		CountryCode string  `json:"country_code"`
+		Region      string  `json:"region"`
+		City        string  `json:"city"`
+		Latitude    float64 `json:"latitude"`
+		Longitude   float64 `json:"longitude"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return geoInfo{loaded: true, err: err}
+	}
+	if !data.Success || data.CountryCode == "" {
+		return geoInfo{loaded: true, err: fmt.Errorf("geo lookup: no location")}
+	}
+	return geoInfo{loaded: true, code: data.CountryCode, name: data.Country,
+		region: data.Region, city: data.City, lat: data.Latitude, lon: data.Longitude}
+}
+
+// fetchVpnFlag calls ip-api.com for the proxy/hosting flags that ipwho.is
+// does not expose. Failures degrade to "not a VPN" so a single API outage
+// never hides the user's location.
+func fetchVpnFlag() bool {
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Get("http://ip-api.com/json/?fields=status,proxy,hosting")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var data struct {
+		Status  string `json:"status"`
+		Proxy   bool   `json:"proxy"`
+		Hosting bool   `json:"hosting"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil || data.Status != "success" {
+		return false
+	}
+	return data.Proxy || data.Hosting
 }
 
 // locLabel renders the human-readable location for the status bar and footer.
@@ -65,11 +119,14 @@ func (g geoInfo) locLabel() string {
 		return "locating…"
 	}
 	if g.err != nil || g.code == "" {
-		return "unknown"
+		return "..."
 	}
 	parts := []string{g.name}
 	if g.city != "" {
 		parts = append(parts, g.city)
+	}
+	if g.vpn {
+		parts = append(parts, "via VPN")
 	}
 	flag := countryFlag(g.code)
 	label := strings.Join(parts, ", ")
@@ -80,7 +137,9 @@ func (g geoInfo) locLabel() string {
 }
 
 // countryCoords maps ISO 3166-1 alpha-2 codes to (longitude, latitude) so the
-// world map can pin the user's approximate position.
+// world map can pin the user's approximate position. Exact coordinates from
+// the geolocation API take precedence; this table is only a fallback when
+// they are missing.
 var countryCoords = map[string][2]float64{
 	"JP": {138.3, 36.2}, "US": {-98.0, 39.0}, "CA": {-106.0, 56.0},
 	"MX": {-102.5, 23.6}, "BR": {-48.0, -10.0}, "AR": {-63.6, -34.0},
@@ -101,5 +160,15 @@ var countryCoords = map[string][2]float64{
 	"VN": {107.8, 16.5}, "PH": {122.0, 12.9}, "ID": {113.9, -0.8},
 	"NZ": {172.8, -41.5}, "AU": {134.0, -25.0}, "ZA": {25.0, -29.0},
 	"NG": {8.0, 9.6}, "KE": {37.9, 0.0}, "MA": {-7.1, 31.8},
-	"TN": {9.6, 34.0},
+	"TN": {9.6, 34.0}, "BJ": {2.36, 6.45}, "CI": {-5.6, 7.5},
+	"SN": {-17.4, 14.5}, "GH": {-1.2, 7.9}, "ML": {-3.6, 17.6},
+	"BF": {-1.7, 12.2}, "TG": {0.8, 8.6}, "NE": {9.4, 17.6},
+	"GM": {-15.4, 13.4}, "GN": {-10.9, 10.4}, "LR": {-9.4, 6.3},
+	"SL": {-11.8, 8.5}, "MR": {-10.9, 21.0}, "CM": {12.7, 5.0},
+	"TD": {18.7, 15.4}, "CD": {23.8, -3.0}, "ET": {39.6, 9.1},
+	"UG": {32.3, 1.4}, "RW": {29.9, -2.0}, "SD": {30.2, 15.5},
+	"LY": {17.2, 27.0}, "DZ": {2.6, 28.0}, "NA": {18.5, -22.1},
+	"BW": {24.7, -22.3}, "MZ": {35.5, -18.7}, "ZM": {27.8, -13.1},
+	"MW": {34.3, -13.5}, "MG": {46.9, -19.4}, "AO": {17.9, -12.3},
+	"TZ": {34.9, -6.4}, "ZW": {29.2, -19.0},
 }

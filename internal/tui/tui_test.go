@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/davegallant/vpngate/pkg/vpn"
+	"github.com/muesli/termenv"
 )
 
 func testServer(name string) vpn.Server {
@@ -296,6 +297,66 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 	}
 	if !pinned {
 		t.Errorf("globeView did not pin the Japan marker in:\n%s", strings.Join(gv.lines, "\n"))
+	}
+}
+
+func TestGlobePinsExactCoordsAndVpnMarker(t *testing.T) {
+	a := testServer("a")
+	base := func() *model {
+		return &model{
+			servers: []vpn.Server{a},
+			results: map[string]vpn.ProbeResult{
+				"a": {Status: vpn.ProbeWorking, LatencyMs: 42},
+			},
+			mode:       ModeBrowse,
+			round:      1,
+			cursorHost: "a",
+			width:      140,
+			height:     24,
+			globeRot:   0,
+		}
+	}
+
+	// Exact API coordinates win over the country table fallback.
+	m := base()
+	m.geo = geoInfo{loaded: true, code: "BJ", name: "Benin", city: "Abomey-Calavi", lat: 6.4485, lon: 2.3557}
+	out := strings.Join(m.globeView().lines, "\n")
+	if !strings.Contains(out, "YOU") || !strings.Contains(out, "●") {
+		t.Errorf("globe with exact coords missing YOU marker in:\n%s", out)
+	}
+
+	// A VPN exit is labelled VPN and pinned with the VPN colour. Force a
+	// colour profile so lipgloss emits ANSI codes and the two markers
+	// actually differ (without a profile every style renders plain).
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(prev)
+	m = base()
+	m.geo = geoInfo{loaded: true, code: "NL", name: "Netherlands", city: "Amsterdam", lat: 52.37, lon: 4.89, vpn: true}
+	gv := m.globeView()
+	out = strings.Join(gv.lines, "\n")
+	if !strings.Contains(out, "VPN") {
+		t.Errorf("globe with vpn geo missing VPN label in:\n%s", out)
+	}
+	vpnDot := styleMarkerVpn.Render("●")
+	youDot := styleMarker.Render("●")
+	if !strings.Contains(out, vpnDot) {
+		t.Errorf("globe with vpn geo missing VPN-coloured marker (have YOU dot %q) in:\n%s", youDot, out)
+	}
+	if strings.Contains(out, youDot) {
+		t.Errorf("globe with vpn geo must not use the plain YOU marker in:\n%s", out)
+	}
+
+	// The cache is reused while nothing changed and rebuilt when dirtied.
+	m = base()
+	m.geo = geoInfo{loaded: true, code: "JP", name: "Japan", lat: 36.2, lon: 138.3}
+	first := m.globeView()
+	if second := m.globeView(); second != first {
+		t.Error("globeView() rebuilt while clean; cache must be reused")
+	}
+	m.globeDirty = true
+	if second := m.globeView(); second == first {
+		t.Error("globeView() reused cache while dirty")
 	}
 }
 

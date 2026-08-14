@@ -41,23 +41,24 @@ func landAt(lat, lon float64) bool {
 	return landBits[bit/8]&(1<<(7-uint(bit%8))) != 0
 }
 
-// globeRamps are the shaded colour ramps used to fake a single light source.
+// globeRamps are the greyscale ramps used to fake a single light source.
 // Index 0 is the darkest (terminator), index 3 the brightest (sun side).
+// The globe itself stays monochrome; only the location pins carry colour.
 var globeRamps = struct {
 	land  [4]lipgloss.Style
 	ocean [4]lipgloss.Style
 }{
 	land: [4]lipgloss.Style{
-		lipgloss.NewStyle().Foreground(lipgloss.Color("28")),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("34")),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("70")),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("76")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("239")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("249")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("254")),
 	},
 	ocean: [4]lipgloss.Style{
-		lipgloss.NewStyle().Foreground(lipgloss.Color("17")),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("24")),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("31")),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("234")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 	},
 }
 
@@ -86,8 +87,14 @@ func shadeLevel(diffuse float64) int {
 
 // globeView builds the orthographically projected, sun-shaded globe with the
 // user's location pinned. It returns nil when the terminal is too narrow or
-// short to fit it.
+// short to fit it. The rendered result is cached and only rebuilt when the
+// terminal size, rotation or geo info changed, so resize bursts and spinner
+// ticks do not redo the per-pixel work every frame.
 func (m *model) globeView() *globeView {
+	if !m.globeDirty && m.globeCache != nil {
+		return m.globeCache
+	}
+	m.globeDirty = false
 	rows := m.visibleRows()
 	if m.width < 80 || rows < 7 {
 		return nil
@@ -109,30 +116,49 @@ func (m *model) globeView() *globeView {
 
 	markerCol, markerRow := 0, 0
 	hasMarker := false
-	if m.geo.loaded && m.geo.err == nil && m.geo.code != "" {
-		if c, ok := countryCoords[strings.ToUpper(m.geo.code)]; ok {
-			if u, v, vis := projectPoint(c[1], c[0], lam0, sinP0, cosP0); vis {
-				markerRow = int(math.Round(v * float64(r)))
-				markerCol = int(math.Round(u * float64(r)))
-				hasMarker = true
-			}
+	// Exact coordinates from the geolocation API win; the country table is
+	// only a fallback when they are missing.
+	var markerLat, markerLon float64
+	if m.geo.loaded && m.geo.err == nil {
+		if m.geo.lat != 0 || m.geo.lon != 0 {
+			markerLat, markerLon = m.geo.lat, m.geo.lon
+		} else if c, ok := countryCoords[strings.ToUpper(m.geo.code)]; ok {
+			markerLat, markerLon = c[1], c[0]
+		}
+	}
+	if markerLat != 0 || markerLon != 0 {
+		if u, v, vis := projectPoint(markerLat, markerLon, lam0, sinP0, cosP0); vis {
+			markerRow = int(math.Round(v * float64(r)))
+			markerCol = int(math.Round(u * float64(r)))
+			hasMarker = true
 		}
 	}
 
 	title := styleGeo.Render("YOU")
 	sub := ""
 	if m.geo.loaded && m.geo.err == nil && m.geo.code != "" {
-		title = styleGeo.Render("YOU") + " " + countryFlag(m.geo.code)
+		// On a VPN the resolved location is the exit point, so the pin
+		// changes colour and label instead of masquerading as home.
+		label, st := "YOU", styleGeo
+		if m.geo.vpn {
+			label, st = "VPN", styleMarkerVpn
+		}
+		title = st.Render(label) + " " + countryFlag(m.geo.code)
 		sub = m.geo.code
 		if m.geo.city != "" {
 			sub += " · " + m.geo.city
 		} else if m.geo.name != "" {
 			sub += " · " + m.geo.name
 		}
+		if m.geo.vpn {
+			sub += " · via VPN"
+		}
 	} else if !m.geo.loaded {
 		sub = "locating…"
 	} else {
-		sub = "unavailable"
+		// No usable geolocation: keep the pin hidden and show a clear
+		// placeholder instead of a made-up country.
+		sub = "..."
 	}
 
 	lines := make([]string, 0, 2*r+3)
@@ -151,7 +177,11 @@ func (m *model) globeView() *globeView {
 				continue
 			}
 			if hasMarker && i == markerCol && j == markerRow {
-				b.WriteString(styleMarker.Render("●"))
+				if m.geo.vpn {
+					b.WriteString(styleMarkerVpn.Render("●"))
+				} else {
+					b.WriteString(styleMarker.Render("●"))
+				}
 				continue
 			}
 			w := math.Sqrt(1 - d2)
@@ -178,7 +208,8 @@ func (m *model) globeView() *globeView {
 	for i, l := range lines {
 		lines[i] = pad.Width(width).Render(truncate(l, width))
 	}
-	return &globeView{lines: lines, width: width}
+	m.globeCache = &globeView{lines: lines, width: width}
+	return m.globeCache
 }
 
 // projectPoint maps (lat, lon) degrees into view-space coordinates (u, v) and

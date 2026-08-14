@@ -40,10 +40,12 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(m.nextCmds(), geoCmd())
+	return tea.Batch(pollCmd(m.monitor, m.round), m.tickIfNeeded(), geoCmd())
 }
 
-// pollCmd samples the monitor's latest results on a fixed interval.
+// pollCmd samples the monitor's latest results on a fixed interval. The poll
+// chain is self-sustaining: statusMsg always re-arms exactly one pollCmd, so
+// it never multiplies.
 func pollCmd(mon *vpn.Monitor, lastRound uint64) tea.Cmd {
 	return func() tea.Msg {
 		time.Sleep(200 * time.Millisecond)
@@ -59,14 +61,37 @@ func tickCmd() tea.Cmd {
 	}
 }
 
-// nextCmds keeps the poll loop running and, while anything needs animating,
-// the spinner tick as well.
-func (m *model) nextCmds() tea.Cmd {
-	cmds := []tea.Cmd{pollCmd(m.monitor, m.round)}
-	if m.animated() {
-		cmds = append(cmds, tickCmd())
+// resizeCoalesce throttles terminal resize events. While the user drags the
+// window border the terminal floods the program with WindowSizeMsg; applying
+// each one would rebuild the frame dozens of times per second. Events within
+// the window are coalesced into a single delayed resizeMsg instead.
+const resizeCoalesce = 40 * time.Millisecond
+
+// resizeMsg applies a terminal size after the resize burst settles.
+type resizeMsg struct {
+	width  int
+	height int
+}
+
+// applySize stores the new terminal size and marks the globe for a rebuild.
+func (m *model) applySize(w, h int) {
+	if w == m.width && h == m.height {
+		return
 	}
-	return tea.Batch(cmds...)
+	m.width, m.height = w, h
+	m.globeDirty = true
+}
+
+// tickIfNeeded starts the tick chain, but only when something needs it and
+// no chain is already live. Without the guard a new chain would be armed on
+// every statusMsg, and since each tick re-arms itself, chains would multiply
+// until the renderer saturates and key events queue up indefinitely.
+func (m *model) tickIfNeeded() tea.Cmd {
+	if (m.animated() || m.globeVisible()) && !m.tickAlive {
+		m.tickAlive = true
+		return tickCmd()
+	}
+	return nil
 }
 
 // animated reports whether something on screen needs the spinner to advance:
@@ -87,17 +112,44 @@ func (m *model) animated() bool {
 	return false
 }
 
+// globeVisible reports whether the globe column is wide/tall enough to be
+// shown; while visible the tick chain keeps running so it keeps rotating.
+func (m *model) globeVisible() bool {
+	return m.width >= 80 && m.visibleRows() >= 7
+}
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		return m, m.nextCmds()
+		// Coalesce resize bursts: apply immediately only when the last
+		// resize was long enough ago, otherwise defer to a single
+		// delayed resizeMsg carrying the newest pending size.
+		m.pendingW, m.pendingH = msg.Width, msg.Height
+		if time.Since(m.lastResize) < resizeCoalesce {
+			return m, tea.Tick(resizeCoalesce, func(time.Time) tea.Msg {
+				return resizeMsg{width: m.pendingW, height: m.pendingH}
+			})
+		}
+		m.lastResize = time.Now()
+		m.applySize(msg.Width, msg.Height)
+		// The renderer diffs against its pre-resize buffer, so shrunk
+		// chrome would linger on screen. Clear forces a full repaint of
+		// the new layout.
+		return m, tea.Batch(tea.ClearScreen, m.tickIfNeeded())
+
+	case resizeMsg:
+		m.lastResize = time.Now()
+		m.applySize(msg.width, msg.height)
+		return m, tea.Batch(tea.ClearScreen, m.tickIfNeeded())
 
 	case tickMsg:
+		// The chain dies on entry; if anything still needs animating it
+		// is re-armed right here, exactly once.
+		m.tickAlive = false
 		m.spin = (m.spin + 1) % len(spinnerFrames)
 		m.globeRot++
-		return m, m.nextCmds()
+		m.globeDirty = true
+		return m, m.tickIfNeeded()
 
 	case statusMsg:
 		// Apply the latest results snapshot on every poll so statuses
@@ -114,15 +166,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursorHost = list[0].HostName
 			}
 		}
-		return m, m.nextCmds()
+		return m, tea.Batch(pollCmd(m.monitor, m.round), m.tickIfNeeded())
 
 	case geoMsg:
 		m.geo = geoInfo(msg)
-		return m, m.nextCmds()
+		m.globeDirty = true
+		return m, m.tickIfNeeded()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
 
-	return m, m.nextCmds()
+	return m, m.tickIfNeeded()
 }

@@ -15,7 +15,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.searching {
 			m.searching = false
 			m.filter = ""
-			return m, m.nextCmds()
+			return m, m.tickIfNeeded()
 		}
 		m.quitting = true
 		return m, tea.Quit
@@ -25,23 +25,23 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searching = false
 			m.filter = ""
 		}
-		return m, m.nextCmds()
+		return m, m.tickIfNeeded()
 
 	case "enter":
 		if m.searching {
 			m.searching = false
-			return m, m.nextCmds()
+			return m, m.tickIfNeeded()
 		}
 		if m.mode == ModeSelect && m.listLen() > 0 {
 			list := m.displayServers()
 			m.selected = &list[m.cursorIndex()]
 			return m, tea.Quit
 		}
-		return m, m.nextCmds()
+		return m, m.tickIfNeeded()
 
 	case "/":
 		m.searching = true
-		return m, m.nextCmds()
+		return m, m.tickIfNeeded()
 
 	case "backspace":
 		if m.searching {
@@ -52,7 +52,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.searching = false
 			}
 		}
-		return m, m.nextCmds()
+		return m, m.tickIfNeeded()
 
 	case "up", "k":
 		m.move(-1)
@@ -77,7 +77,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m, m.nextCmds()
+	return m, m.tickIfNeeded()
 }
 
 func firstHost(list []vpn.Server) string {
