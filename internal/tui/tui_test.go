@@ -407,12 +407,20 @@ func TestViewShowsTunnelExitWhileConnected(t *testing.T) {
 		},
 	}
 	out := m.View()
-	for _, want := range []string{"VPN", "🇩🇪", "Germany Neu-Anspach", "via VPN"} {
+	for _, want := range []string{"YOU", "VPN", "🇩🇪", "🇧🇯", "Germany Neu-Anspach", "via VPN"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("View() while connected missing %q in:\n%s", want, out)
 		}
 	}
-	for _, forbid := range []string{"Benin", "Abomey-Calavi", "YOU"} {
+	// The home pin stays red, the exit pin turns blue, and the startup
+	// location is only a pin, never the label of the current location.
+	if !strings.Contains(out, styleMarker.Render("●")) {
+		t.Errorf("View() while connected missing the red home pin in:\n%s", out)
+	}
+	if !strings.Contains(out, styleMarkerVpn.Render("●")) {
+		t.Errorf("View() while connected missing the blue exit pin in:\n%s", out)
+	}
+	for _, forbid := range []string{"Benin", "Abomey-Calavi"} {
 		if strings.Contains(out, forbid) {
 			t.Errorf("View() while connected still shows %q (startup location) in:\n%s", forbid, out)
 		}
@@ -442,6 +450,72 @@ func TestViewShowsRelayCountryFallbackWhileConnected(t *testing.T) {
 	for _, want := range []string{"VPN", "🇯🇵", "Japan", "via VPN"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("View() fallback missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+// The globe grows with the terminal: a taller and wider terminal gets a
+// bigger disc, and a narrow one still keeps the globe as long as the list
+// keeps its minimum width.
+func TestGlobeGrowsWithTerminal(t *testing.T) {
+	big := &model{
+		width:   200,
+		height:  36, // rows 26 -> radius 14 (height-capped)
+		servers: []vpn.Server{testServer("a")},
+		results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
+	}
+	gv := big.globeView()
+	if gv == nil {
+		t.Fatal("globeView() nil at 200x36")
+	}
+	if gv.width != 31 { // 2*14 + 3
+		t.Errorf("globeView width = %d, want 31 at 200x36", gv.width)
+	}
+
+	narrow := &model{
+		width:   70,
+		height:  24,
+		servers: []vpn.Server{testServer("a")},
+		results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
+	}
+	if gv := narrow.globeView(); gv == nil {
+		t.Error("globeView() nil at 70x24, radius should still fit")
+	} else if gv.width != 19 {
+		t.Errorf("globeView width = %d, want 19 at 70x24", gv.width)
+	}
+}
+
+// truncate must count display columns, not runes: a flag emoji is two
+// columns, so cutting at a tight width must never overflow.
+func TestTruncateRespectsDisplayWidth(t *testing.T) {
+	jp := "\U0001F1EF\U0001F1F5" // 🇯🇵, 2 columns
+	out := truncate(jp+jp+"X", 4)
+	if w := lipgloss.Width(out); w > 4 {
+		t.Errorf("truncate(%q, 4) = %q with %d columns, want <= 4", jp+jp+"X", out, w)
+	}
+	if !strings.Contains(out, "…") {
+		t.Errorf("truncate(%q, 4) should end with ellipsis, got %q", jp+jp+"X", out)
+	}
+	for _, s := range []string{jp, jp + jp, jp + "a"} {
+		if out := truncate(s, lipgloss.Width(s)); out != s {
+			t.Errorf("truncate(%q, %d) altered the string: %q", s, lipgloss.Width(s), out)
+		}
+	}
+}
+
+// The title bar pads its content with one space per side; it must never
+// exceed the terminal width after rendering.
+func TestTitleBarNeverExceedsWidth(t *testing.T) {
+	m := &model{
+		width:   60,
+		height:  24,
+		servers: []vpn.Server{testServer("a")},
+		results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
+	}
+	for _, w := range []int{40, 60, 80, 100, 140} {
+		m.width = w
+		if vw := lipgloss.Width(m.titleBar(w)); vw > w {
+			t.Errorf("titleBar at width %d renders %d columns: %q", w, vw, m.titleBar(w))
 		}
 	}
 }

@@ -134,8 +134,8 @@ var (
 	styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255"))
 	styleSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	styleGeo       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("45"))
-	styleMarker    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
-	styleMarkerVpn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("226"))
+	styleMarker    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")) // home pin: red
+	styleMarkerVpn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))  // exit pin: blue
 )
 
 // Column widths for the fixed-width fields; the hostname takes the rest.
@@ -144,4 +144,5 @@ const (
 	colLatencyW = 9  // "2414ms" + space
 	colScoreW   = 8
 	colCountryW = 13 // flag (2) + space + 9 runes + space
+	minListW    = 44 // minimum columns the server list keeps beside the globe
 )

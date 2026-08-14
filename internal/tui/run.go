@@ -121,10 +121,12 @@ func (m *model) animated() bool {
 	return false
 }
 
-// globeVisible reports whether the globe column is wide/tall enough to be
-// shown; while visible the tick chain keeps running so it keeps rotating.
+// globeVisible reports whether the globe column currently fits; while visible
+// the tick chain keeps running so it keeps rotating. It mirrors the sizing
+// in globeRadius() so the animation never runs for a hidden globe nor stops
+// for one that is on screen.
 func (m *model) globeVisible() bool {
-	return m.width >= 80 && m.visibleRows() >= 7
+	return m.globeRadius() > 0
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

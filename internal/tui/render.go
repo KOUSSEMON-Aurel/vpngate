@@ -257,8 +257,10 @@ func (m *model) titleBar(w int) string {
 	}
 	left := " vpngate "
 	right := fmt.Sprintf(" %s · %d relays · %s ", mode, len(m.servers), watch)
-	full := truncate(left+right, w)
-	return styleTitle.Render(truncate(full, w)) + "\n"
+	full := left + right
+	// Render before truncating: styleTitle pads with one space on each side,
+	// and truncating first would push the line past the terminal width.
+	return truncate(styleTitle.Render(full), w) + "\n"
 }
 
 func (m *model) statusBar(w int) string {

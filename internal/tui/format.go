@@ -74,20 +74,20 @@ func countryFlag(code string) string {
 const ansiReset = "\x1b[0m"
 
 // truncate shortens s to at most max visible columns, appending an ellipsis
-// when it cuts. ANSI escape sequences count as zero width and are copied
-// verbatim, so styled strings can be truncated without splitting an escape
-// sequence (which would render as literal garbage) or corrupting colours.
+// when it cuts. Width is measured in terminal display columns (lipgloss), so
+// wide glyphs like flag emoji (2 columns) are cut correctly instead of
+// overflowing the terminal and wrapping the line. ANSI escape sequences count
+// as zero width and are copied verbatim, so styled strings can be truncated
+// without splitting an escape sequence (which would render as literal
+// garbage) or corrupting colours.
 func truncate(s string, max int) string {
-	rs := []rune(s)
 	if max <= 0 {
 		return ""
 	}
-	if max == 1 {
-		if len(rs) <= 1 {
-			return s
-		}
-		return string(rs[:1])
+	if lipgloss.Width(s) <= max {
+		return s
 	}
+	rs := []rune(s)
 	var b strings.Builder
 	n := 0
 	for i := 0; i < len(rs); {
@@ -117,12 +117,13 @@ func truncate(s string, max int) string {
 			b.WriteString(string(rs[start:i]))
 			continue
 		}
-		if n >= max-1 {
+		// Reserve the last column for the ellipsis.
+		if n+lipgloss.Width(string(r)) > max-1 {
 			b.WriteString(ansiReset + "…")
 			return b.String()
 		}
 		b.WriteRune(r)
-		n++
+		n += lipgloss.Width(string(r))
 		i++
 	}
 	return b.String()

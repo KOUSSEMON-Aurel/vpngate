@@ -85,6 +85,33 @@ func shadeLevel(diffuse float64) int {
 	return l
 }
 
+// globeRadius computes the globe's disc radius from the current terminal
+// size. The radius is bounded by both axes: the height drives how many disc
+// rows fit next to the list body, the width bounds how many columns the right
+// column may take while the list keeps at least minListW columns. The globe
+// therefore grows when the terminal grows in either direction and shrinks
+// back when the terminal is squeezed.
+func (m *model) globeRadius() int {
+	rows := m.visibleRows()
+	if rows < 7 {
+		return 0
+	}
+	r := (rows + 2) / 2
+	if m.height < 16 {
+		r = (rows - 1) / 2
+	}
+	if r > 14 {
+		r = 14
+	}
+	if rw := (m.width - minListW) / 2; r > rw {
+		r = rw
+	}
+	if r < 4 {
+		return 0
+	}
+	return r
+}
+
 // globeView builds the orthographically projected, sun-shaded globe with the
 // user's location pinned. It returns nil when the terminal is too narrow or
 // short to fit it. The rendered result is cached and only rebuilt when the
@@ -95,25 +122,8 @@ func (m *model) globeView() *globeView {
 		return m.globeCache
 	}
 	m.globeDirty = false
-	rows := m.visibleRows()
-	if m.width < 80 || rows < 7 {
-		return nil
-	}
-	// The globe fills as much of the right-hand column as the frame can
-	// hold: the list body (header + rows + spacer + detail pane) sets the
-	// vertical ceiling so the globe never pushes the footer off, and the
-	// horizon is the rate at which the list column may shrink.
-	r := (rows + 2) / 2
-	if m.height < 16 {
-		r = (rows - 1) / 2
-	}
-	if r > 12 {
-		r = 12
-	}
-	if maxW := (m.width - 44) / 2; r > maxW {
-		r = maxW
-	}
-	if r < 4 {
+	r := m.globeRadius()
+	if r == 0 {
 		return nil
 	}
 	width := 2*r + 3
@@ -122,52 +132,82 @@ func (m *model) globeView() *globeView {
 	phi0, lam0 := 15*math.Pi/180, lon0*math.Pi/180
 	sinP0, cosP0 := math.Sin(phi0), math.Cos(phi0)
 
-	markerCol, markerRow := 0, 0
-	hasMarker := false
-	// Exact coordinates from the geolocation API win; the country table is
-	// only a fallback when they are missing.
-	g := m.liveGeoInfo()
-	var markerLat, markerLon float64
-	if g.loaded && g.err == nil {
-		if g.lat != 0 || g.lon != 0 {
-			markerLat, markerLon = g.lat, g.lon
-		} else if c, ok := countryCoords[strings.ToUpper(g.code)]; ok {
-			markerLat, markerLon = c[1], c[0]
+	// The pin positions come from the exact coordinates reported by the
+	// geolocation API; the country table is only a fallback. The home pin
+	// is the location resolved at startup (red); while a tunnel is up the
+	// exit pin (blue) tracks the verified exit, and both stay visible so
+	// the origin and the destination are distinguishable on the same map.
+	var homeLat, homeLon float64
+	home := m.geo
+	if home.loaded && home.err == nil {
+		if home.lat != 0 || home.lon != 0 {
+			homeLat, homeLon = home.lat, home.lon
+		} else if c, ok := countryCoords[strings.ToUpper(home.code)]; ok {
+			homeLat, homeLon = c[1], c[0]
 		}
 	}
-	if markerLat != 0 || markerLon != 0 {
-		if u, v, vis := projectPoint(markerLat, markerLon, lam0, sinP0, cosP0); vis {
-			markerRow = int(math.Round(v * float64(r)))
-			markerCol = int(math.Round(u * float64(r)))
-			hasMarker = true
+	var exitLat, exitLon float64
+	live := m.liveGeoInfo()
+	if live.loaded && live.err == nil && live.vpn {
+		if live.lat != 0 || live.lon != 0 {
+			exitLat, exitLon = live.lat, live.lon
+		} else if c, ok := countryCoords[strings.ToUpper(live.code)]; ok {
+			exitLat, exitLon = c[1], c[0]
 		}
 	}
 
-	title := styleGeo.Render("YOU")
+	homeCol, homeRow, hasHome := 0, 0, false
+	if homeLat != 0 || homeLon != 0 {
+		if u, v, vis := projectPoint(homeLat, homeLon, lam0, sinP0, cosP0); vis {
+			homeRow = int(math.Round(v * float64(r)))
+			homeCol = int(math.Round(u * float64(r)))
+			hasHome = true
+		}
+	}
+	exitCol, exitRow, hasExit := 0, 0, false
+	if exitLat != 0 || exitLon != 0 {
+		if u, v, vis := projectPoint(exitLat, exitLon, lam0, sinP0, cosP0); vis {
+			exitRow = int(math.Round(v * float64(r)))
+			exitCol = int(math.Round(u * float64(r)))
+			hasExit = true
+		}
+	}
+
+	title := ""
 	sub := ""
-	if g.loaded && g.err == nil && g.code != "" {
-		// On a VPN the resolved location is the exit point, so the pin
-		// changes colour and label instead of masquerading as home.
-		label, st := "YOU", styleGeo
-		if g.vpn {
-			label, st = "VPN", styleMarkerVpn
-		}
-		title = st.Render(label) + " " + countryFlag(g.code)
-		sub = g.code
-		if g.city != "" {
-			sub += " · " + g.city
-		} else if g.name != "" {
-			sub += " · " + g.name
-		}
-		if g.vpn {
-			sub += " · via VPN"
-		}
-	} else if !g.loaded {
+	if !home.loaded && !live.loaded {
 		sub = "locating…"
-	} else {
-		// No usable geolocation: keep the pin hidden and show a clear
-		// placeholder instead of a made-up country.
+	} else if home.code == "" && live.code == "" {
 		sub = "..."
+	} else {
+		if hasHome && home.code != "" {
+			title = styleMarker.Render("YOU") + " " + countryFlag(home.code)
+		}
+		if hasExit && live.code != "" {
+			if title != "" {
+				title += " "
+			}
+			title += styleMarkerVpn.Render("VPN") + " " + countryFlag(live.code)
+		}
+		if live.vpn && live.code != "" {
+			sub = live.code
+			if live.city != "" {
+				sub += " · " + live.city
+			} else if live.name != "" {
+				sub += " · " + live.name
+			}
+			sub += " · via VPN"
+		} else if home.code != "" {
+			sub = home.code
+			if home.city != "" {
+				sub += " · " + home.city
+			} else if home.name != "" {
+				sub += " · " + home.name
+			}
+		}
+	}
+	if title == "" {
+		title = styleGeo.Render("YOU")
 	}
 
 	lines := make([]string, 0, 2*r+3)
@@ -185,12 +225,12 @@ func (m *model) globeView() *globeView {
 				b.WriteByte(' ')
 				continue
 			}
-			if hasMarker && i == markerCol && j == markerRow {
-				if m.geo.vpn {
-					b.WriteString(styleMarkerVpn.Render("●"))
-				} else {
-					b.WriteString(styleMarker.Render("●"))
-				}
+			if hasExit && i == exitCol && j == exitRow {
+				b.WriteString(styleMarkerVpn.Render("●"))
+				continue
+			}
+			if hasHome && i == homeCol && j == homeRow {
+				b.WriteString(styleMarker.Render("●"))
 				continue
 			}
 			w := math.Sqrt(1 - d2)
@@ -217,8 +257,41 @@ func (m *model) globeView() *globeView {
 	for i, l := range lines {
 		lines[i] = pad.Width(width).Render(truncate(l, width))
 	}
+
+	// Vertically centre the globe in the list body column so it does not hug
+	// the title when the terminal is much taller than the globe. The panel
+	// view aligns its own chrome, so centering is skipped there.
+	if !m.connPanel {
+		if bodyH := m.bodyHeight(); bodyH > len(lines) {
+			padTop := (bodyH - len(lines)) / 2
+			for i := 0; i < padTop; i++ {
+				lines = append([]string{pad.Width(width).Render("")}, lines...)
+			}
+			for len(lines) < bodyH {
+				lines = append(lines, pad.Width(width).Render(""))
+			}
+		}
+	}
+
 	m.globeCache = &globeView{lines: lines, width: width}
 	return m.globeCache
+}
+
+// bodyHeight is the number of lines the list body occupies at the current
+// frame layout (header + rows + spacer + detail pane).
+func (m *model) bodyHeight() int {
+	fl := m.frameLayout()
+	n := fl.rows
+	if fl.header {
+		n++
+	}
+	if fl.blank {
+		n++
+	}
+	if fl.detail {
+		n += 3
+	}
+	return n
 }
 
 // projectPoint maps (lat, lon) degrees into view-space coordinates (u, v) and
