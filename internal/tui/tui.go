@@ -34,8 +34,10 @@ type Options struct {
 	Watch bool
 	// ConnectFn, when set, runs an in-TUI connection: Enter in select mode
 	// keeps the TUI alive, streams ConnectFn's output until it returns, and
-	// then returns to the picker instead of quitting.
-	ConnectFn func(ctx context.Context, server vpn.Server, emit func(string)) error
+	// then returns to the picker instead of quitting. results carries the
+	// latest probe verdicts so the connection can prefer relays that are
+	// actually reachable.
+	ConnectFn func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error
 }
 
 // connMsg streams one output line from an in-TUI connection, or marks its
@@ -54,6 +56,12 @@ type connectState struct {
 	err       error
 	connected bool
 	canceled  bool
+	// exitIP/exitCC/exitGeo describe the real tunnel egress as reported
+	// by the connection's own verification, not the server that was
+	// selected in the picker (a retry may land on another relay).
+	exitIP  string
+	exitCC  string
+	exitGeo string
 }
 
 type statusMsg struct {
@@ -92,7 +100,7 @@ type model struct {
 	pendingW    int
 	pendingH    int
 	ctx         context.Context
-	connectFn   func(ctx context.Context, server vpn.Server, emit func(string)) error
+	connectFn   func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error
 	connect     *connectState
 	connCancel  context.CancelFunc
 	connPipe    chan connMsg

@@ -27,6 +27,7 @@ type Monitor struct {
 	rounds   uint64
 	running  bool
 	inFlight bool
+	paused   bool
 
 	concurrency int
 	timeout     time.Duration
@@ -36,6 +37,7 @@ type Monitor struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	trigger chan struct{}
+	resume  chan struct{}
 }
 
 // NewMonitor builds a monitor for the given servers. The default timeout
@@ -62,6 +64,7 @@ func NewMonitor(servers []Server, opts MonitorOptions) *Monitor {
 		ctx:         ctx,
 		cancel:      cancel,
 		trigger:     make(chan struct{}, 1),
+		resume:      make(chan struct{}, 1),
 	}
 }
 
@@ -77,6 +80,37 @@ func (m *Monitor) Start() {
 	m.mu.Unlock()
 
 	go m.loop()
+}
+
+// Pause suspends automatic verification rounds until Resume is called.
+// In-flight probes finish, but no new round is scheduled and ForceRound
+// becomes a no-op. Used while a tunnel is up, when probing through the
+// tunnel would produce meaningless results.
+func (m *Monitor) Pause() {
+	m.mu.Lock()
+	m.paused = true
+	m.mu.Unlock()
+}
+
+// Resume re-enables automatic verification rounds.
+func (m *Monitor) Resume() {
+	m.mu.Lock()
+	if !m.paused {
+		m.mu.Unlock()
+		return
+	}
+	m.paused = false
+	m.mu.Unlock()
+	select {
+	case m.resume <- struct{}{}:
+	default:
+	}
+}
+
+func (m *Monitor) isPaused() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.paused
 }
 
 // Stop halts the background loop and cancels any in-flight probes.
@@ -96,15 +130,28 @@ func (m *Monitor) loop() {
 		case <-m.ctx.Done():
 			return
 		}
+		if m.isPaused() {
+			// Wait for Resume (or shutdown) without scheduling rounds:
+			// probing through a live tunnel would be meaningless.
+			select {
+			case <-m.resume:
+			case <-m.ctx.Done():
+				return
+			}
+			continue
+		}
 		m.ForceRound()
 	}
 }
 
 // ForceRound schedules an immediate verification round (coalesced if one is
-// already running).
+// already running). While paused it is a no-op.
 func (m *Monitor) ForceRound() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.paused {
+		return
+	}
 	if m.inFlight {
 		select {
 		case m.trigger <- struct{}{}:

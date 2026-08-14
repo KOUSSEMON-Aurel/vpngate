@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -230,6 +231,9 @@ func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(st
 			// Tunnel was up and openvpn exited on its own: that is a
 			// dropped tunnel, report it.
 			reasons = append(reasons, fmt.Sprintf("%s: tunnel dropped", s.HostName))
+			if emit != nil && i < attempts-1 {
+				emit("[vpngate] tunnel dropped; reconnecting…")
+			}
 		case result.err == nil:
 			// User stopped the connection.
 			return nil
@@ -239,6 +243,9 @@ func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(st
 				emit(fmt.Sprintf("Relay %s refused the connection (AUTH_FAILED, likely full), trying next relay…", s.HostName))
 			}
 		default:
+			if result.initialized && emit != nil && i < attempts-1 {
+				emit("[vpngate] tunnel dropped; reconnecting…")
+			}
 			reasons = append(reasons, fmt.Sprintf("%s: %v", s.HostName, result.err))
 			if emit != nil && i < attempts-1 {
 				emit(fmt.Sprintf("Relay %s failed (%v), trying next relay…", s.HostName, result.err))
@@ -259,6 +266,10 @@ func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(st
 type connectAttemptResult struct {
 	err        error
 	authFailed bool
+	// initialized is true when the tunnel reached "Initialization Sequence
+	// Completed" before failing (dropped, killed by the health check, or
+	// openvpn crashed). Used to tell the user the tunnel was up and lost.
+	initialized bool
 }
 
 // connectAttempt runs openvpn against one relay and reports how it went:
@@ -282,17 +293,21 @@ func connectAttempt(ctx context.Context, s vpn.Server, emit func(string)) connec
 	select {
 	case <-tw.initDone:
 		// Tunnel established; hand over to the verification check and
-		// run until openvpn exits or the user stops it.
+		// run until openvpn exits or the user stops it. The health
+		// monitor watches for a silently dead tunnel and cancels the
+		// attempt so the retry chain picks the next relay.
 		if emit != nil {
 			emit("Tunnel up; verifying connectivity through it…")
+			emit(fmt.Sprintf("[vpngate] connected via %s", s.HostName))
 		}
 		go verifyTunnel(emit)
+		go keepTunnelAlive(attemptCtx, cancel, emit)
 		err := <-runErrCh
 		if ctx.Err() != nil {
 			// User stop: not an error.
 			return connectAttemptResult{}
 		}
-		return connectAttemptResult{err: err}
+		return connectAttemptResult{err: err, initialized: true}
 
 	case <-tw.authDone:
 		cancel()
@@ -344,38 +359,145 @@ func (w *trackedWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// tunnelHealthInterval is how often a live tunnel health check runs.
+// Overridable in tests.
+var tunnelHealthInterval = 10 * time.Second
+
+// tunnelHealthMaxFails is how many consecutive failed health checks are
+// tolerated before the tunnel is declared dead and the attempt restarts.
+var tunnelHealthMaxFails = 3
+
+// tunnelHealthCheck performs one liveness probe of the tunnel: an HTTPS
+// 204 over the tunnel. Overridable in tests.
+var tunnelHealthCheck = func() error {
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get("https://www.gstatic.com/generate_204")
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// keepTunnelAlive periodically verifies that traffic actually egresses
+// through the tunnel. openvpn exiting is not the only way a tunnel dies:
+// relays can drop it administratively while the process keeps running.
+// After tunnelHealthMaxFails consecutive failures the attempt context is
+// canceled, openvpn is torn down, and the retry chain moves to the next
+// relay (emitting the "tunnel dropped; reconnecting" marker through
+// connectAttempt's result path). Stops when attemptCtx is done.
+func keepTunnelAlive(ctx context.Context, cancel context.CancelFunc, emit func(string)) {
+	t := time.NewTicker(tunnelHealthInterval)
+	defer t.Stop()
+
+	fails := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+
+		if err := tunnelHealthCheck(); err == nil {
+			fails = 0
+			continue
+		} else {
+			fails++
+			if emit != nil {
+				emit(fmt.Sprintf("[vpngate] WARNING: tunnel health check failed (%d/%d): %v", fails, tunnelHealthMaxFails, err))
+			}
+			if fails >= tunnelHealthMaxFails {
+				if emit != nil {
+					emit("[vpngate] tunnel appears dead; reconnecting…")
+				}
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+// ipwhoResult is the subset of ipwho.is's JSON answered to an IP query.
+type ipwhoResult struct {
+	IP          string `json:"ip"`
+	Country     string `json:"country"`
+	CountryCode string `json:"country_code"`
+}
+
+// geoClient is shared by the tunnel checks (verifyTunnel and the health
+// monitor both need a client; a slow response must never block the other).
+var geoHTTPClient = &http.Client{Timeout: 12 * time.Second}
+
 // verifyTunnel performs an end-to-end check once a tunnel is up: an HTTPS
-// fetch that exercises DNS resolution and egress through the tunnel, plus
-// the tunnel's exit IP. Results are emitted as log lines so the user can
-// see in the live output whether the connection actually carries traffic.
+// fetch that exercises DNS resolution and egress through the tunnel, the
+// tunnel's IPv4 exit IP, the exit's real geolocation, and whether IPv6
+// egress still bypasses the tunnel. Results are emitted as log lines so
+// the user can see in the live output whether the connection actually
+// carries traffic and where it really exits.
 func verifyTunnel(emit func(string)) {
 	if emit == nil {
 		return
 	}
-	client := &http.Client{Timeout: 12 * time.Second}
 
 	start := time.Now()
-	resp, err := client.Get("https://www.gstatic.com/generate_204")
+	resp, err := geoHTTPClient.Get("https://www.gstatic.com/generate_204")
 	if err != nil {
 		emit(fmt.Sprintf("[vpngate] WARNING: tunnel check failed: no HTTPS through the tunnel (%v)", err))
 		return
 	}
 	_ = resp.Body.Close()
 	ms := time.Since(start).Milliseconds()
-	if resp.StatusCode == http.StatusNoContent {
-		emit(fmt.Sprintf("[vpngate] tunnel verified: HTTPS 204 through the tunnel in %dms", ms))
-	} else {
+	if resp.StatusCode != http.StatusNoContent {
 		emit(fmt.Sprintf("[vpngate] WARNING: tunnel check returned HTTP %d in %dms", resp.StatusCode, ms))
-	}
-
-	ipResp, err := client.Get("https://api.ipify.org")
-	if err != nil {
 		return
 	}
-	defer func() { _ = ipResp.Body.Close() }()
+	emit(fmt.Sprintf("[vpngate] tunnel verified: HTTPS 204 through the tunnel in %dms", ms))
+
+	// api4.ipify.org answers only over IPv4, so the exit IP reported is
+	// the IPv4 tunnel exit regardless of host IPv6 configuration.
+	ipResp, err := geoHTTPClient.Get("https://api4.ipify.org")
+	if err != nil || ipResp.StatusCode != http.StatusOK {
+		return
+	}
 	ip, _ := io.ReadAll(io.LimitReader(ipResp.Body, 64))
-	if len(ip) > 0 {
-		emit(fmt.Sprintf("[vpngate] exit IP: %s", strings.TrimSpace(string(ip))))
+	_ = ipResp.Body.Close()
+	exitIP := strings.TrimSpace(string(ip))
+	if exitIP == "" {
+		return
+	}
+	emit(fmt.Sprintf("[vpngate] exit IP: %s", exitIP))
+
+	geoResp, err := geoHTTPClient.Get("https://ipwho.is/" + exitIP)
+	if err != nil {
+		emit(fmt.Sprintf("[vpngate] WARNING: exit geolocation failed (%v)", err))
+	} else if geoResp.StatusCode != http.StatusOK {
+		emit(fmt.Sprintf("[vpngate] WARNING: exit geolocation returned HTTP %d", geoResp.StatusCode))
+		_ = geoResp.Body.Close()
+	} else {
+		var g ipwhoResult
+		if jsonErr := json.NewDecoder(io.LimitReader(geoResp.Body, 4096)).Decode(&g); jsonErr == nil && g.CountryCode != "" {
+			emit(fmt.Sprintf("[vpngate] exit: %s · %s %s", g.IP, strings.ToUpper(g.CountryCode), g.Country))
+		}
+		_ = geoResp.Body.Close()
+	}
+
+	// IPv6 egress is not routed through the tunnel: if the host can still
+	// reach the internet over IPv6, browsers will bypass the VPN entirely.
+	// The client config black-holes IPv6 (route-ipv6 ::/0); this check
+	// flags the leak when that black-hole did not take effect.
+	v6Resp, err := geoHTTPClient.Get("https://api6.ipify.org")
+	if err != nil || v6Resp.StatusCode != http.StatusOK {
+		return
+	}
+	v6IP, _ := io.ReadAll(io.LimitReader(v6Resp.Body, 64))
+	_ = v6Resp.Body.Close()
+	if strings.TrimSpace(string(v6IP)) != "" {
+		emit(fmt.Sprintf("[vpngate] WARNING: IPv6 egress active (%s) — traffic can bypass the tunnel; disable IPv6 for full protection", strings.TrimSpace(string(v6IP))))
 	}
 }
 
@@ -437,6 +559,20 @@ func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
 		return err
 	}
 
+	// vpngate relays are IPv4-only: on a host that also routes IPv6,
+	// browsers would bypass the tunnel over IPv6 and reveal the real
+	// location. Ask openvpn to fold IPv6 into the tunnel when the host
+	// has a default IPv6 route; on IPv6-less hosts (where no leak is
+	// possible) the directive is skipped so openvpn does not warn about
+	// an IPv6 route it cannot apply.
+	if hostRoutesIPv6() {
+		if _, err := tmpfile.WriteString("\n# vpngate: force all IPv6 into the tunnel (relays are IPv4-only)\nroute-ipv6 ::/0\n"); err != nil {
+			_ = tmpfile.Close()
+			_ = os.Remove(tmpfile.Name())
+			return err
+		}
+	}
+
 	if err := tmpfile.Close(); err != nil {
 		_ = os.Remove(tmpfile.Name())
 		return err
@@ -452,6 +588,23 @@ func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
 	return vpn.ConnectContextWithVerb(ctx, tmpfile.Name(), out, verb)
 }
 
+// hostRoutesIPv6 reports whether the host has a default IPv6 route, i.e.
+// real IPv6 connectivity that could bypass the IPv4-only tunnel. It reads
+// /proc/net/ipv6_route (Linux) and treats absence as "no IPv6" everywhere.
+func hostRoutesIPv6() bool {
+	raw, err := os.ReadFile("/proc/net/ipv6_route")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == "00000000000000000000000000000000" && f[1] == "00" {
+			return true
+		}
+	}
+	return false
+}
+
 // runTuiConnect opens the picker and connects to the chosen server inside
 // the TUI, streaming openvpn output until the user stops it or openvpn
 // exits, then returns to the picker. It returns when the user quits.
@@ -459,8 +612,8 @@ func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
 	restore := quietLogs()
 	defer restore()
 
-	connectFn := func(connCtx context.Context, s vpn.Server, emit func(string)) error {
-		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, nil), emit); err != nil {
+	connectFn := func(connCtx context.Context, s vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
+		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, results), emit); err != nil {
 			return fmt.Errorf("%w%s", err, privilegeHint(err))
 		}
 		return nil

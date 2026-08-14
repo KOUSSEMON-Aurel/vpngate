@@ -498,7 +498,7 @@ func TestViewFitsHeightEverySize(t *testing.T) {
 
 // buildModel returns a select-mode model with two working servers and one
 // down server, sized 80x24, ready for key tests.
-func buildModel(connectFn func(ctx context.Context, server vpn.Server, emit func(string)) error) *model {
+func buildModel(connectFn func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error) *model {
 	return &model{
 		servers: []vpn.Server{testServer("good"), testServer("bad")},
 		results: map[string]vpn.ProbeResult{
@@ -517,7 +517,7 @@ func buildModel(connectFn func(ctx context.Context, server vpn.Server, emit func
 
 func TestEnterBlockedOnDownServer(t *testing.T) {
 	started := false
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		started = true
 		return nil
 	})
@@ -539,7 +539,7 @@ func TestEnterBlockedOnDownServer(t *testing.T) {
 
 func TestEnterBlockedWhileChecking(t *testing.T) {
 	started := false
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		started = true
 		return nil
 	})
@@ -557,7 +557,7 @@ func TestEnterBlockedWhileChecking(t *testing.T) {
 
 func TestEnterAllowsWorkingServer(t *testing.T) {
 	startedCh := make(chan struct{}, 1)
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		startedCh <- struct{}{}
 		<-ctx.Done()
 		return nil
@@ -579,7 +579,7 @@ func TestEnterAllowsWorkingServer(t *testing.T) {
 }
 
 func TestLeftRightTogglesLogPanel(t *testing.T) {
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		<-ctx.Done()
 		return nil
 	})
@@ -611,7 +611,7 @@ func TestLeftRightTogglesLogPanel(t *testing.T) {
 }
 
 func TestConnectedRowGetsMarker(t *testing.T) {
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		<-ctx.Done()
 		return nil
 	})
@@ -629,7 +629,7 @@ func TestConnectedRowGetsMarker(t *testing.T) {
 }
 
 func TestStopClearsConnectionState(t *testing.T) {
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		<-ctx.Done()
 		return nil
 	})
@@ -655,7 +655,7 @@ func TestStopClearsConnectionState(t *testing.T) {
 }
 
 func TestPanelScrollClamps(t *testing.T) {
-	m := buildModel(func(ctx context.Context, server vpn.Server, emit func(string)) error {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
 		<-ctx.Done()
 		return nil
 	})
@@ -677,5 +677,45 @@ func TestPanelScrollClamps(t *testing.T) {
 	m.connScrollEnd()
 	if m.connBottom != 0 {
 		t.Errorf("end should pin to the newest line, got %d", m.connBottom)
+	}
+}
+
+// TestApplyConnLineTracksRealRelay verifies the streamed markers update the
+// connection state: which relay really initialized the tunnel, the verified
+// exit geolocation, and tunnel drops.
+func TestApplyConnLineTracksRealRelay(t *testing.T) {
+	m := buildModel(func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
+		return nil
+	})
+	m.connect = &connectState{server: m.servers[0]}
+	m.connect.connected = false
+
+	m.applyConnLine("[vpngate] connected via bad")
+	if !m.connect.connected {
+		t.Error("connected marker did not flag the tunnel as up")
+	}
+	if m.connect.server.HostName != "bad" {
+		t.Errorf("relay not tracked: connection shows %s", m.connect.server.HostName)
+	}
+
+	m.applyConnLine("[vpngate] exit: 219.100.37.63 · JP Japan")
+	if m.connect.exitIP != "219.100.37.63" || m.connect.exitCC != "JP" || m.connect.exitGeo != "Japan" {
+		t.Errorf("exit geo not parsed: %+v", m.connect)
+	}
+
+	m.applyConnLine("[vpngate] tunnel dropped; reconnecting…")
+	if m.connect.connected {
+		t.Error("tunnel still flagged up after drop marker")
+	}
+}
+
+// TestParseExitLine verifies the exit marker payload split.
+func TestParseExitLine(t *testing.T) {
+	ip, cc, geo, ok := parseExitLine("219.100.37.63 · JP Japan")
+	if !ok || ip != "219.100.37.63" || cc != "JP" || geo != "Japan" {
+		t.Fatalf("bad parse: %q %q %q %v", ip, cc, geo, ok)
+	}
+	if _, _, _, ok := parseExitLine("garbage"); ok {
+		t.Fatal("garbage accepted")
 	}
 }

@@ -129,3 +129,62 @@ func TestMonitorForceRound(t *testing.T) {
 	}
 	<-done
 }
+
+// TestMonitorPauseFreezesRounds verifies that while paused no new probe
+// rounds are scheduled (and ForceRound is a no-op), then rounds resume.
+func TestMonitorPauseFreezesRounds(t *testing.T) {
+	cleanup := fakeOpenVPN(t, "PUSH_REPLY,route 0.0.0.0 0.0.0.0")
+	defer cleanup()
+
+	host, port, stop := localTCPListener(t)
+	defer stop()
+
+	server := serverWithConfig(host, port)
+	server.HostName = "pause-me"
+
+	mon := NewMonitor([]Server{server}, MonitorOptions{
+		Concurrency: 1,
+		Timeout:     5 * time.Second,
+		Interval:    20 * time.Millisecond,
+		Continuous:  true,
+	})
+	mon.Start()
+	defer mon.Stop()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for first round")
+		}
+		if mon.Round() >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	mon.Pause()
+	time.Sleep(100 * time.Millisecond) // let any in-flight round finish
+	first := mon.Round()
+	time.Sleep(150 * time.Millisecond) // several intervals would have fired
+	if got := mon.Round(); got != first {
+		t.Fatalf("rounds kept climbing while paused: %d -> %d", first, got)
+	}
+
+	mon.ForceRound() // must be a no-op while paused
+	time.Sleep(80 * time.Millisecond)
+	if got := mon.Round(); got != first {
+		t.Fatalf("ForceRound ran while paused: %d -> %d", first, got)
+	}
+
+	mon.Resume()
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for rounds to resume")
+		}
+		if mon.Round() > first {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

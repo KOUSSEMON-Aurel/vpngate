@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,5 +249,116 @@ func TestConnectWithRetryCancelDuringAttempt(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 15*time.Second {
 		t.Fatalf("cancel took too long: %s", elapsed)
+	}
+}
+
+// TestKeepAliveHealthyTunnelStaysUp verifies a tunnel passing its health
+// checks is never killed by the health monitor.
+func TestKeepAliveHealthyTunnelStaysUp(t *testing.T) {
+	oldInterval := tunnelHealthInterval
+	oldCheck := tunnelHealthCheck
+	t.Cleanup(func() {
+		tunnelHealthInterval = oldInterval
+		tunnelHealthCheck = oldCheck
+	})
+	tunnelHealthInterval = 20 * time.Millisecond
+	tunnelHealthCheck = func() error { return nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		keepTunnelAlive(ctx, cancel, nil)
+		close(done)
+	}()
+
+	time.Sleep(120 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatal("healthy tunnel was killed by the health monitor")
+	}
+	cancel()
+	<-done
+}
+
+// TestKeepAliveDeadTunnelCancels verifies the tunnel is torn down and the
+// reconnecting marker emitted after tunnelHealthMaxFails failed checks.
+func TestKeepAliveDeadTunnelCancels(t *testing.T) {
+	oldInterval := tunnelHealthInterval
+	oldMax := tunnelHealthMaxFails
+	oldCheck := tunnelHealthCheck
+	t.Cleanup(func() {
+		tunnelHealthInterval = oldInterval
+		tunnelHealthMaxFails = oldMax
+		tunnelHealthCheck = oldCheck
+	})
+	tunnelHealthInterval = 20 * time.Millisecond
+	tunnelHealthMaxFails = 2
+	tunnelHealthCheck = func() error { return errors.New("no egress") }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var lines []string
+	keepTunnelAlive(ctx, cancel, func(line string) { lines = append(lines, line) })
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out: health monitor never canceled the tunnel")
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := strings.Join(lines, "\n"); !strings.Contains(got, "tunnel appears dead") {
+		t.Fatalf("expected dead-tunnel marker, got %q", got)
+	}
+}
+
+// TestConnectAttemptConfigBlackholesIPv6 verifies the client config written
+// for every attempt forces IPv6 into the tunnel so no traffic can bypass it.
+func TestConnectAttemptConfigBlackholesIPv6(t *testing.T) {
+	fakeOpenVPNBin(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- connectServer(ctx, fakeServer("ok"), io.Discard) }()
+
+	// The fake openvpn sleeps forever, so the temp config exists while
+	// the attempt is live; snap it (the newest match — stale files from
+	// hard-killed sessions can linger in /tmp) before canceling.
+	var cfg string
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var newest string
+		var newestMod time.Time
+		matches, _ := filepath.Glob(os.TempDir() + "/vpngate-openvpn-config-*")
+		for _, m := range matches {
+			if fi, err := os.Stat(m); err == nil && fi.ModTime().After(newestMod) {
+				newest, newestMod = m, fi.ModTime()
+			}
+		}
+		if newest != "" {
+			if raw, err := os.ReadFile(newest); err == nil {
+				cfg = string(raw)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the client config")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	// The black-hole directives must match the host's IPv6 reality: a
+	// host with a default IPv6 route gets route-ipv6, an IPv6-less host
+	// must not carry a directive openvpn would reject with a warning.
+	if hostRoutesIPv6() {
+		if !strings.Contains(cfg, "route-ipv6 ::/0") {
+			t.Fatalf("config missing IPv6 black-hole on IPv6 host:\n%s", cfg)
+		}
+	} else if strings.Contains(cfg, "route-ipv6") {
+		t.Fatalf("config contains IPv6 black-hole on IPv6-less host:\n%s", cfg)
 	}
 }

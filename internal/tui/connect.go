@@ -8,6 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/davegallant/vpngate/pkg/vpn"
 )
 
 // maxConnLines is the number of trailing openvpn output lines kept for the
@@ -30,6 +32,15 @@ func (m *model) startConnect() tea.Cmd {
 	server := list[m.cursorIndex()]
 
 	m.stopConnect()
+
+	// While a tunnel is up, probe rounds would run THROUGH it: every
+	// probe then connects from the connected relay's own IP, so relays
+	// effectively drop themselves and everything shows red. The verdicts
+	// already on screen were measured on the real path, so keep them and
+	// freeze probing until the tunnel is gone.
+	if m.monitor != nil {
+		m.monitor.Pause()
+	}
 
 	connCtx, cancel := context.WithCancel(m.ctx)
 	pipe := make(chan connMsg, 256)
@@ -55,7 +66,7 @@ func (m *model) startConnect() tea.Cmd {
 			case <-connCtx.Done():
 			}
 		}
-		err := m.connectFn(connCtx, server, emit)
+		err := m.connectFn(connCtx, server, m.results, emit)
 		select {
 		case pipe <- connMsg{done: true, err: err}:
 		default:
@@ -151,6 +162,57 @@ func (m *model) connStatus() (string, lipgloss.Style) {
 	}
 }
 
+// applyConnLine interprets the structured markers the connect pipeline
+// emits on top of raw openvpn output: which relay actually initialized
+// the tunnel, the verified real egress (IP, country), and tunnel drops.
+func (m *model) applyConnLine(line string) {
+	cs := m.connect
+	if cs == nil {
+		return
+	}
+	switch {
+	case strings.HasPrefix(line, "[vpngate] connected via "):
+		host := strings.TrimPrefix(line, "[vpngate] connected via ")
+		// A retry may have landed on a different relay than the one
+		// selected in the picker; track the real one.
+		if s, ok := m.serverByHost(host); ok {
+			cs.server = s
+		}
+		cs.connected = true
+	case strings.HasPrefix(line, "[vpngate] exit: "):
+		if ip, cc, geo, ok := parseExitLine(strings.TrimPrefix(line, "[vpngate] exit: ")); ok {
+			cs.exitIP, cs.exitCC, cs.exitGeo = ip, cc, geo
+		}
+	case strings.Contains(line, "tunnel dropped"):
+		cs.connected = false
+	}
+}
+
+// serverByHost finds the server matching a relay hostname, if any.
+func (m *model) serverByHost(host string) (vpn.Server, bool) {
+	for _, s := range m.servers {
+		if s.HostName == host {
+			return s, true
+		}
+	}
+	return vpn.Server{}, false
+}
+
+// parseExitLine splits an "[vpngate] exit:" marker payload of the form
+// "<ip> · <CC> <Country>" into its parts.
+func parseExitLine(rest string) (ip, cc, geo string, ok bool) {
+	parts := strings.SplitN(rest, " · ", 2)
+	if len(parts) != 2 {
+		return "", "", "", false
+	}
+	ip = parts[0]
+	fields := strings.Fields(parts[1])
+	if len(fields) < 2 {
+		return "", "", "", false
+	}
+	return ip, fields[0], strings.Join(fields[1:], " "), true
+}
+
 // connPanelView renders the connection log panel, which replaces the list
 // body while m.connPanel is set. The title bar stays on top and the panel
 // keeps the same chrome budget so it never exceeds the terminal height.
@@ -168,6 +230,12 @@ func (m *model) connPanelView(w int) string {
 	flag := countryFlag(s.CountryShort)
 	status, st := m.connStatus()
 	head := fmt.Sprintf(" %s %s %s %s", spinnerFrames[m.spin], s.HostName, flag, st.Render(status))
+	if cs.connected && cs.exitIP != "" {
+		head += fmt.Sprintf(" · exit %s", cs.exitIP)
+		if cs.exitGeo != "" {
+			head += fmt.Sprintf(" %s %s", countryFlag(cs.exitCC), cs.exitGeo)
+		}
+	}
 	b.WriteString(truncate(head, w) + "\n")
 
 	if cs.err != nil && !cs.canceled {

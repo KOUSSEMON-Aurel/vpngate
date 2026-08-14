@@ -481,8 +481,18 @@ func (m *model) footer(w int) string {
 		b.WriteString(st.Render("● " + status))
 		b.WriteString(styleDim.Render(fmt.Sprintf(" %s", s.HostName)))
 		if m.connect.connected {
-			b.WriteString(styleDim.Render(fmt.Sprintf(" (%s)", s.IPAddr)))
+			ip := m.connect.exitIP
+			if ip == "" {
+				ip = s.IPAddr
+			}
+			b.WriteString(styleDim.Render(fmt.Sprintf(" (%s)", ip)))
+			if m.connect.exitGeo != "" {
+				b.WriteString(styleDim.Render(fmt.Sprintf(" %s %s", countryFlag(m.connect.exitCC), m.connect.exitGeo)))
+			}
 		}
+		// Probe rounds are frozen while the tunnel is up (they would run
+		// through it and self-drop every relay); the tray shows that the
+		// statuses on screen are the last real-path measurements.
 		b.WriteString(styleDim.Render("  [←] logs"))
 		b.WriteString(styleDim.Render("  [q] stop"))
 	} else {

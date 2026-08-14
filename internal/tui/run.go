@@ -2,10 +2,10 @@ package tui
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+
 	"github.com/davegallant/vpngate/pkg/vpn"
 )
 
@@ -187,6 +187,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.tickIfNeeded()
 		}
 		if msg.done {
+			// Probing was frozen while the tunnel was up because any
+			// round would run through it and self-drop every relay.
+			// Resume measuring the real path now that it is gone.
+			if m.monitor != nil {
+				m.monitor.Resume()
+			}
 			// A user-cancel returns straight to the list. A failure keeps
 			// the connection state (marker and footer show it) until the
 			// user clears it with q; the log panel holds the full error.
@@ -209,9 +215,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lines = lines[len(lines)-maxConnLines:]
 			}
 			m.connect.lines = lines
-			if strings.Contains(msg.line, "Initialization Sequence Completed") {
-				m.connect.connected = true
-			}
+			m.applyConnLine(msg.line)
 		}
 		// Advance the connection spinner on each ~150ms heartbeat.
 		m.spin = (m.spin + 1) % len(spinnerFrames)
