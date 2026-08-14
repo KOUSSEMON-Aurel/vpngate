@@ -257,6 +257,9 @@ func (m *model) titleBar(w int) string {
 	}
 	left := " vpngate "
 	right := fmt.Sprintf(" %s · %d relays · %s ", mode, len(m.servers), watch)
+	if m.sortMode != sortModeDefault {
+		right = fmt.Sprintf(" %s · %d relays · %s · sort %s ", mode, len(m.servers), watch, sortModeName(m.sortMode))
+	}
 	full := left + right
 	// Render before truncating: styleTitle pads with one space on each side,
 	// and truncating first would push the line past the terminal width.
@@ -505,6 +508,7 @@ func (m *model) footer(w int) string {
 			b.WriteString("  [enter] connect")
 		}
 		b.WriteString("  [w] working-only")
+		b.WriteString(fmt.Sprintf("  [s] sort: %s", sortModeName(m.sortMode)))
 		b.WriteString("  [r] re-check")
 		b.WriteString("  [/] search")
 		b.WriteString("  [q] quit")

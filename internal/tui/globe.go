@@ -166,20 +166,37 @@ func (m *model) globeView() *globeView {
 		}
 	}
 
+	var homeU, homeV float64
+	homeVis, homeRim := false, false
+	if homeLat != 0 || homeLon != 0 {
+		homeU, homeV, homeVis = projectPoint(homeLat, homeLon, lam0, sinP0, cosP0)
+	}
+	var exitU, exitV float64
+	exitVis, exitRim := false, false
+	if exitLat != 0 || exitLon != 0 {
+		exitU, exitV, exitVis = projectPoint(exitLat, exitLon, lam0, sinP0, cosP0)
+	}
+
 	homeCol, homeRow, hasHome := 0, 0, false
 	if homeLat != 0 || homeLon != 0 {
-		if u, v, vis := projectPoint(homeLat, homeLon, lam0, sinP0, cosP0); vis {
-			homeRow = int(math.Round(v * float64(r)))
-			homeCol = int(math.Round(u * float64(r)))
-			hasHome = true
+		hasHome = true
+		if homeVis {
+			homeCol = clampCell(int(math.Round(homeU*float64(r))), r)
+			homeRow = clampCell(int(math.Round(homeV*float64(r))), r)
+		} else {
+			homeCol, homeRow = rimCell(homeU, homeV, r)
+			homeRim = true
 		}
 	}
 	exitCol, exitRow, hasExit := 0, 0, false
 	if exitLat != 0 || exitLon != 0 {
-		if u, v, vis := projectPoint(exitLat, exitLon, lam0, sinP0, cosP0); vis {
-			exitRow = int(math.Round(v * float64(r)))
-			exitCol = int(math.Round(u * float64(r)))
-			hasExit = true
+		hasExit = true
+		if exitVis {
+			exitCol = clampCell(int(math.Round(exitU*float64(r))), r)
+			exitRow = clampCell(int(math.Round(exitV*float64(r))), r)
+		} else {
+			exitCol, exitRow = rimCell(exitU, exitV, r)
+			exitRim = true
 		}
 	}
 
@@ -228,19 +245,30 @@ func (m *model) globeView() *globeView {
 		var b strings.Builder
 		b.WriteByte(' ')
 		for i := -r; i <= r; i++ {
+			// Pins win over the disc: they are checked first so a marker
+			// on the very rim renders even when its cell centre sits a
+			// hair outside the mathematical disc.
+			if hasExit && i == exitCol && j == exitRow {
+				if exitRim {
+					b.WriteString(styleMarkerVpnRim.Render("•"))
+				} else {
+					b.WriteString(styleMarkerVpn.Render("●"))
+				}
+				continue
+			}
+			if hasHome && i == homeCol && j == homeRow {
+				if homeRim {
+					b.WriteString(styleMarkerRim.Render("•"))
+				} else {
+					b.WriteString(styleMarker.Render("●"))
+				}
+				continue
+			}
 			u := float64(i) / rr
 			v := float64(j) / rr
 			d2 := u*u + v*v
 			if d2 > 1 {
 				b.WriteByte(' ')
-				continue
-			}
-			if hasExit && i == exitCol && j == exitRow {
-				b.WriteString(styleMarkerVpn.Render("●"))
-				continue
-			}
-			if hasHome && i == homeCol && j == homeRow {
-				b.WriteString(styleMarker.Render("●"))
 				continue
 			}
 			w := math.Sqrt(1 - d2)
@@ -308,9 +336,36 @@ func (m *model) bodyHeight() int {
 	return n
 }
 
-// projectPoint maps (lat, lon) degrees into view-space coordinates (u, v) and
-// reports whether the point is on the visible hemisphere. The view is the
-// inverse of the per-pixel rotation in globeView.
+// clampCell keeps a pin cell inside the disc grid. A point near the horizon
+// can round to a cell whose centre sits just past the mathematical rim; the
+// pin is drawn there anyway (it wins over the disc test) so a visible pin
+// never silently disappears at the very edge.
+func clampCell(v, r int) int {
+	if v < -r {
+		return -r
+	}
+	if v > r {
+		return r
+	}
+	return v
+}
+
+// rimCell maps a pin's screen azimuth to the cell on the disc rim where a
+// dim marker shows while the pin itself has rotated behind the globe, so
+// the home and exit locations stay trackable at all times.
+func rimCell(u, v float64, r int) (int, int) {
+	a := math.Atan2(v, u)
+	return int(math.Round(math.Cos(a) * float64(r))), int(math.Round(math.Sin(a) * float64(r)))
+}
+
+// projectPoint maps (lat, lon) degrees into view-space disc coordinates
+// (u, v) and reports whether the point is on the visible hemisphere. The
+// view is the inverse of the per-pixel rotation in globeView: the camera
+// looks along view +z (sphere coords (cosP0, 0, sinP0)), so a point is
+// visible exactly when its view-space depth w = px*cosP0 + pz*sinP0 is
+// positive. The (u, v) projection is returned even for back-side points:
+// its azimuth is where the pin must be rim-marked as the globe rotates it
+// out of view.
 func projectPoint(lat, lon, lam0, sinP0, cosP0 float64) (u, v float64, visible bool) {
 	phi := lat * math.Pi / 180
 	lam := lon*math.Pi/180 - lam0
@@ -320,8 +375,8 @@ func projectPoint(lat, lon, lam0, sinP0, cosP0 float64) (u, v float64, visible b
 	pz := math.Sin(phi)
 	u = px*sinP0 - pz*cosP0
 	v = py
-	if u*u+v*v > 1 {
-		return 0, 0, false
+	if w := px*cosP0 + pz*sinP0; w <= 0 {
+		return u, v, false
 	}
 	return u, v, true
 }

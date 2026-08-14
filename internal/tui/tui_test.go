@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -291,17 +292,38 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 		t.Errorf("globeView has %d lines, want 19", len(gv.lines))
 	}
 
+	// Japan sits behind the globe at rotation 0, so the pin must not be
+	// drawn on the front face (mirrored to a wrong spot, the pre-fix bug)
+	// but as a dim rim marker at Tokyo's screen azimuth.
 	pinned := false
 	for _, l := range gv.lines {
 		if vw := lipgloss.Width(l); vw > gv.width {
 			t.Errorf("globe line exceeds column width %d: %q (%d)", gv.width, l, vw)
 		}
 		if strings.Contains(l, "●") {
+			t.Errorf("back-side Japan marker rendered on the front face in:\n%s", strings.Join(gv.lines, "\n"))
+		}
+		if strings.Contains(l, "•") {
 			pinned = true
 		}
 	}
 	if !pinned {
-		t.Errorf("globeView did not pin the Japan marker in:\n%s", strings.Join(gv.lines, "\n"))
+		t.Errorf("globeView did not rim-pin the Japan marker in:\n%s", strings.Join(gv.lines, "\n"))
+	}
+
+	// The rim marker must sit on the disc rim along Japan's azimuth.
+	u, v, vis := projectPoint(35.68, 139.69, 0, math.Sin(15*math.Pi/180), math.Cos(15*math.Pi/180))
+	if vis {
+		t.Fatalf("Japan must be behind the globe at rotation 0, got visible (u=%f v=%f)", u, v)
+	}
+	rx, ry := rimCell(u, v, 8)
+	if rx*rx+ry*ry > 64 || math.Abs(math.Atan2(float64(ry), float64(rx))-math.Atan2(v, u)) > 8*math.Pi/180 {
+		t.Errorf("rimCell(%f,%f) = (%d,%d) not on the rim along the azimuth", u, v, rx, ry)
+	}
+	wantCol := 15 + 1 + rx + 8 // leftPad + disc offset + i
+	wantRow := 1 + ry + 8      // title line + j + r
+	if l := gv.lines[wantRow]; !strings.Contains(l, "•") {
+		t.Errorf("rim marker at row %d col %d missing in line %q", wantRow, wantCol, l)
 	}
 }
 
@@ -922,4 +944,123 @@ func TestParseExitLine(t *testing.T) {
 	if _, _, _, ok := parseExitLine("garbage"); ok {
 		t.Fatal("garbage accepted")
 	}
+}
+
+// TestPinTracksGeographyAcrossRotation verifies the home pin never wanders:
+// at every rotation it either sits on the exact front-face cell of its
+// location, or on the rim along its azimuth when the location has rotated
+// behind the globe. The pre-cached position must also match after dirtying.
+func TestPinTracksGeographyAcrossRotation(t *testing.T) {
+	const (
+		lat, lon = 6.4485, 2.3557
+	) // Benin
+	newModel := func() *model {
+		return &model{
+			width:   210, // rows 40 -> radius 21 -> disc 45
+			height:  50,
+			servers: []vpn.Server{testServer("a")},
+			results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
+			mode:    ModeBrowse, round: 1, cursorHost: "a",
+			geo: geoInfo{loaded: true, code: "BJ", name: "Benin", lat: lat, lon: lon},
+		}
+	}
+	for _, rot := range []int{0, 30, 90, 135, 180, 225, 270, 315} {
+		m := newModel()
+		m.globeRot = rot
+		m.globeDirty = true
+		gv := m.globeView()
+		if gv == nil {
+			t.Fatalf("globeView nil at rotation %d", rot)
+		}
+		r := m.globeRadius()
+		width := 2*r + 3
+		leftPad := (gv.width - width) / 2
+		phi0, lam0 := 15*math.Pi/180, float64(rot)*math.Pi/180
+		sinP0, cosP0 := math.Sin(phi0), math.Cos(phi0)
+		u, v, vis := projectPoint(lat, lon, lam0, sinP0, cosP0)
+
+		found := 0
+		for row, l := range gv.lines {
+			// Disc lines carry ANSI colour codes, so measure the marker's
+			// display column with lipgloss.Width instead of a byte index.
+			col := -1
+			for i, r := range l {
+				if r == '●' || r == '•' {
+					col = lipgloss.Width(l[:i])
+					break
+				}
+			}
+			if col < 0 {
+				continue
+			}
+			found++
+			i := col - leftPad - 1 - r
+			j := row - 1 - r
+			if vis {
+				if i != int(math.Round(u*float64(r))) || j != int(math.Round(v*float64(r))) {
+					t.Errorf("rot %d: front pin at (%d,%d), want (%d,%d)", rot, i, j, int(math.Round(u*float64(r))), int(math.Round(v*float64(r))))
+				}
+				w := math.Sqrt(1 - float64(i*i+j*j)/float64(r*r))
+				px := float64(i)/float64(r)*sinP0 + w*cosP0
+				pz := -float64(i)/float64(r)*cosP0 + w*sinP0
+				gotLat := math.Asin(pz) * 180 / math.Pi
+				gotLon := math.Atan2(float64(j)/float64(r), px)*180/math.Pi + float64(rot)
+				if math.Abs(gotLat-lat) > 3 || math.Abs(gotLon-(lon-360*math.Round((lon-float64(rot))/360))) > 3 {
+					t.Errorf("rot %d: pin at (%d,%d) unprojects to (%.2f, %.2f), want (%.2f, %.2f)", rot, i, j, gotLat, gotLon, lat, lon)
+				}
+			} else {
+				rx, ry := rimCell(u, v, r)
+				if i != rx || j != ry {
+					t.Errorf("rot %d: rim marker at (%d,%d), want (%d,%d)", rot, i, j, rx, ry)
+				}
+			}
+		}
+		if found != 1 {
+			t.Errorf("rot %d: expected exactly one pin marker, found %d\n%s", rot, found, strings.Join(gv.lines, "\n"))
+		}
+		if vis && !strings.Contains(strings.Join(gv.lines, "\n"), "YOU") {
+			t.Errorf("rot %d: front pin without YOU title", rot)
+		}
+	}
+}
+
+// TestSortModes verifies the s key ordering: default keeps working relays
+// first by real latency, best puts the lowest latency/score match first,
+// and worst inverts it with unmeasured relays on top.
+func TestSortModes(t *testing.T) {
+	fastLow := vpn.Server{HostName: "a", Score: 10}   // 100ms/10 = 10.0
+	slowHigh := vpn.Server{HostName: "b", Score: 100} // 200ms/100 = 2.0
+	unprobed := vpn.Server{HostName: "c", Score: 50}
+	m := &model{
+		servers:    []vpn.Server{fastLow, slowHigh, unprobed},
+		results:    map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 100}, "b": {Status: vpn.ProbeWorking, LatencyMs: 200}},
+		mode:       ModeBrowse,
+		round:      1,
+		orderRound: 0,
+	}
+	names := func() []string {
+		got := []string{}
+		for _, s := range m.displayServers() {
+			got = append(got, s.HostName)
+		}
+		return got
+	}
+	want := func(exp ...string) {
+		got := names()
+		if strings.Join(got, ",") != strings.Join(exp, ",") {
+			t.Errorf("sortMode %d: got %v, want %v", m.sortMode, got, exp)
+		}
+	}
+
+	// The s key resets orderRound so the freeze is bypassed; emulate that
+	// between mode changes.
+	m.sortMode = sortModeDefault
+	m.orderRound = ^uint64(0)
+	want("a", "b", "c")
+	m.sortMode = sortModeBest
+	m.orderRound = ^uint64(0)
+	want("b", "a", "c")
+	m.sortMode = sortModeWorst
+	m.orderRound = ^uint64(0)
+	want("c", "a", "b")
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -21,15 +22,7 @@ func (m *model) displayServers() []vpn.Server {
 	// full round completes.
 	if m.orderRound != m.round || len(m.order) != len(servers) {
 		sort.SliceStable(servers, func(i, j int) bool {
-			ri, rj := m.results[servers[i].HostName], m.results[servers[j].HostName]
-			ki, kj := statusInfoFor(ri.Status).rank, statusInfoFor(rj.Status).rank
-			if ki != kj {
-				return ki < kj
-			}
-			if ki == 0 {
-				return ri.LatencyMs < rj.LatencyMs
-			}
-			return servers[i].HostName < servers[j].HostName
+			return m.better(servers[i], servers[j])
 		})
 		m.order = m.order[:0]
 		for _, s := range servers {
@@ -73,6 +66,45 @@ func (m *model) displayServers() []vpn.Server {
 	}
 
 	return servers
+}
+
+// better orders two servers under the active sort mode. The default order
+// keeps working relays first (by real latency, then hostname). The best and
+// worst modes rank every server by the latency/score match instead, so a
+// fast relay with a high score surfaces at the top regardless of where it
+// sits in the CSV.
+func (m *model) better(a, b vpn.Server) bool {
+	ra, rb := m.results[a.HostName], m.results[b.HostName]
+	switch m.sortMode {
+	case sortModeBest, sortModeWorst:
+		ma, mb := matchMetric(a, ra), matchMetric(b, rb)
+		if ma != mb {
+			if m.sortMode == sortModeBest {
+				return ma < mb
+			}
+			return ma > mb
+		}
+		return a.HostName < b.HostName
+	default:
+		ka, kb := statusInfoFor(ra.Status).rank, statusInfoFor(rb.Status).rank
+		if ka != kb {
+			return ka < kb
+		}
+		if ka == 0 {
+			return ra.LatencyMs < rb.LatencyMs
+		}
+		return a.HostName < b.HostName
+	}
+}
+
+// matchMetric is the latency/score match value: lower is better, so a fast
+// relay with a high score ranks first. Servers without a usable measurement
+// (still being probed, or a zero score) sort behind every measured one.
+func matchMetric(s vpn.Server, r vpn.ProbeResult) float64 {
+	if r.Status != vpn.ProbeWorking || r.LatencyMs <= 0 || s.Score <= 0 {
+		return math.Inf(1)
+	}
+	return float64(r.LatencyMs) / float64(s.Score)
 }
 
 // statusCounts tallies the current probe results.

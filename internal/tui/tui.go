@@ -115,6 +115,27 @@ type model struct {
 	// pressed on a server that cannot be connected to (down or still
 	// being evaluated). Cleared on the next key.
 	blockMsg string
+	// sortMode cycles the list ordering with the s key: default (working
+	// relays first by real latency), then the latency/score match in
+	// ascending and descending order.
+	sortMode int
+}
+
+// List ordering modes, cycled with the s key.
+const (
+	sortModeDefault = iota
+	sortModeBest    // latency/score ascending: best relays first
+	sortModeWorst   // latency/score descending: worst relays first
+)
+
+func sortModeName(mode int) string {
+	switch mode {
+	case sortModeBest:
+		return "best"
+	case sortModeWorst:
+		return "worst"
+	}
+	return "default"
 }
 
 // spinnerFrames is a compact braille loader used for servers whose state is
@@ -122,20 +143,22 @@ type model struct {
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 var (
-	styleTitle     = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255")).Padding(0, 1)
-	styleHeader    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("110"))
-	styleWorking   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	styleChecking  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	styleWarn      = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
-	styleDown      = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("201"))
-	styleDim       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleCursor    = lipgloss.NewStyle().Background(lipgloss.Color("238")).Foreground(lipgloss.Color("255"))
-	styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255"))
-	styleSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	styleGeo       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("45"))
-	styleMarker    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")) // home pin: red
-	styleMarkerVpn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))  // exit pin: blue
+	styleTitle        = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255")).Padding(0, 1)
+	styleHeader       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("110"))
+	styleWorking      = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	styleChecking     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	styleWarn         = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	styleDown         = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	styleError        = lipgloss.NewStyle().Foreground(lipgloss.Color("201"))
+	styleDim          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	styleCursor       = lipgloss.NewStyle().Background(lipgloss.Color("238")).Foreground(lipgloss.Color("255"))
+	styleSelected     = lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255"))
+	styleSeparator    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleGeo          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("45"))
+	styleMarker       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")) // home pin: red
+	styleMarkerVpn    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))  // exit pin: blue
+	styleMarkerRim    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("88"))  // home pin behind the globe: dim red
+	styleMarkerVpnRim = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("24"))  // exit pin behind the globe: dim blue
 )
 
 // Column widths for the fixed-width fields; the hostname takes the rest.

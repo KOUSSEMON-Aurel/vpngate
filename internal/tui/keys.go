@@ -134,6 +134,11 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursorHost = lastHost(m.displayServers())
 	case "w":
 		m.workingOnly = !m.workingOnly
+	case "s":
+		m.sortMode = (m.sortMode + 1) % 3
+		// Re-derive the order immediately instead of waiting for the next
+		// probe round; an explicit user sort wins over the freeze.
+		m.orderRound = ^uint64(0)
 	case "r":
 		m.monitor.ForceRound()
 
