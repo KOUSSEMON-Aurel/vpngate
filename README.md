@@ -82,13 +82,15 @@ sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
 > vpngate connect --country Japan
 > ```
 >
-> Si votre système utilise systemd-resolved, la restauration du DNS par openvpn déclenche un prompt polkit à chaque déconnexion. Autorisez-la une fois pour toutes :
+> Si votre système utilise systemd-resolved, la restauration du DNS par openvpn déclenche un prompt polkit à chaque connexion/déconnexion. Autorisez-la une fois pour toutes, puis **redémarrez polkit** (les règles ne sont lues qu'au démarrage) :
 >
 > ```shell
+> sudo mkdir -p /etc/polkit-1/rules.d
 > sudo tee /etc/polkit-1/rules.d/50-resolvconf.rules <<'EOF'
 > polkit.addRule(function(action, subject) {
 >     if (action.id == "org.freedesktop.resolve1.revert" ||
 >         action.id == "org.freedesktop.resolve1.set-dns" ||
+>         action.id == "org.freedesktop.resolve1.set-domains" ||
 >         action.id == "org.freedesktop.resolve1.set-dnssec" ||
 >         action.id == "org.freedesktop.resolve1.set-link-llmnr" ||
 >         action.id == "org.freedesktop.resolve1.set-link-mdns") {
@@ -96,6 +98,7 @@ sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
 >     }
 > });
 > EOF
+> sudo systemctl restart polkit
 > ```
 
 ### Lister
