@@ -30,6 +30,11 @@ func (m *model) View() string {
 		h = 24
 	}
 
+	// An in-TUI connection replaces the whole frame with a live log view.
+	if m.connect != nil {
+		return m.connectView(w)
+	}
+
 	list := m.displayServers()
 	m.ensureOffset(len(list))
 	fl := m.frameLayout()

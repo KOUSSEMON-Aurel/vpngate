@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -31,6 +32,28 @@ type Options struct {
 	// Watch re-verifies servers in the background. When false only a
 	// single initial round runs.
 	Watch bool
+	// ConnectFn, when set, runs an in-TUI connection: Enter in select mode
+	// keeps the TUI alive, streams ConnectFn's output until it returns, and
+	// then returns to the picker instead of quitting.
+	ConnectFn func(ctx context.Context, server vpn.Server, emit func(string)) error
+}
+
+// connMsg streams one output line from an in-TUI connection, or marks its
+// completion. A no-field connMsg{} also serves as a poll heartbeat for the
+// connection view.
+type connMsg struct {
+	line string
+	done bool
+	err  error
+}
+
+// connectState is a live in-TUI VPN connection.
+type connectState struct {
+	server    vpn.Server
+	lines     []string
+	err       error
+	connected bool
+	canceled  bool
 }
 
 type statusMsg struct {
@@ -68,6 +91,11 @@ type model struct {
 	lastResize  time.Time
 	pendingW    int
 	pendingH    int
+	ctx         context.Context
+	connectFn   func(ctx context.Context, server vpn.Server, emit func(string)) error
+	connect     *connectState
+	connCancel  context.CancelFunc
+	connPipe    chan connMsg
 }
 
 // spinnerFrames is a compact braille loader used for servers whose state is

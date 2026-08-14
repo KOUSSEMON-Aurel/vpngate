@@ -2,6 +2,7 @@ package exec
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -20,6 +21,18 @@ const tailLines = 8
 // If the command exits with a non-zero status, the error is returned without logging
 // (this allows the caller to decide how to handle it).
 func Run(path string, workDir string, args ...string) error {
+	return run(context.Background(), path, workDir, nil, args...)
+}
+
+// RunContext is Run with a cancelable context and an optional output
+// stream: when ctx is canceled the child process is killed, and when out
+// is non-nil each output line is written to it (followed by a newline) as
+// it is produced.
+func RunContext(ctx context.Context, path string, workDir string, out io.Writer, args ...string) error {
+	return run(ctx, path, workDir, out, args...)
+}
+
+func run(ctx context.Context, path string, workDir string, out io.Writer, args ...string) error {
 	_, err := exec.LookPath(path)
 	if err != nil {
 		log.Error().Msgf("%s is required, please install it", path)
@@ -28,6 +41,7 @@ func Run(path string, workDir string, args ...string) error {
 
 	cmd := exec.Command(path, args...)
 	cmd.Dir = workDir
+	prepareProcGroup(cmd)
 
 	log.Debug().Strs("command", cmd.Args).Msg("Executing command")
 
@@ -48,6 +62,16 @@ func Run(path string, workDir string, args ...string) error {
 		return err
 	}
 
+	// Kill the child's process group when the context is canceled.
+	finished := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			killProcGroup(cmd)
+		case <-finished:
+		}
+	}()
+
 	// stdout and stderr must be drained concurrently: reading them
 	// sequentially (e.g. via io.MultiReader) can deadlock the child if it
 	// fills the unread pipe's OS buffer before the read one reaches EOF.
@@ -58,11 +82,11 @@ func Run(path string, workDir string, args ...string) error {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		stdoutErr = logLines(stdout, &stdoutTail)
+		stdoutErr = streamLines(stdout, out, &stdoutTail)
 	}()
 	go func() {
 		defer wg.Done()
-		stderrErr = logLines(stderr, &stderrTail)
+		stderrErr = streamLines(stderr, out, &stderrTail)
 	}()
 	wg.Wait()
 
@@ -79,22 +103,28 @@ func Run(path string, workDir string, args ...string) error {
 	// We return this without logging since it's expected behavior for some
 	// commands, but append the tail of the command's output so callers can
 	// surface the underlying reason.
-	if err := cmd.Wait(); err != nil {
+	waitErr := cmd.Wait()
+	close(finished)
+	if waitErr != nil {
 		if msg := tailMessage(stdoutTail, stderrTail); msg != "" {
-			return fmt.Errorf("%w: %s", err, msg)
+			return fmt.Errorf("%w: %s", waitErr, msg)
 		}
-		return err
+		return waitErr
 	}
 	return nil
 }
 
-// logLines streams lines from r through a debug log, keeping a capped
-// ring of the most recent lines for failure reporting.
-func logLines(r io.Reader, tail *[]string) error {
+// streamLines streams lines from r through a debug log and, when out is
+// non-nil, through out, keeping a capped ring of the most recent lines for
+// failure reporting.
+func streamLines(r io.Reader, out io.Writer, tail *[]string) error {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		log.Debug().Msg(line)
+		if out != nil {
+			_, _ = io.WriteString(out, line+"\n")
+		}
 		*tail = append(*tail, line)
 		if len(*tail) > tailLines {
 			*tail = (*tail)[1:]

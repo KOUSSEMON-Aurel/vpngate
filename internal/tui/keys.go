@@ -6,6 +6,28 @@ import (
 )
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// While a connection is live, navigation input is suspended and only
+	// stop/quit keys apply. openvpn receives stdin/logs elsewhere, so no
+	// other key is forwarded. After a failed connection the error screen
+	// is dismissed by any of q/esc/enter.
+	if m.connect != nil {
+		switch msg.String() {
+		case "q", "esc", "enter":
+			if m.connect.err != nil && !m.connect.canceled {
+				m.connect = nil
+			} else {
+				m.stopConnect()
+			}
+		case "ctrl+c":
+			if m.connect.err != nil && !m.connect.canceled {
+				m.quitting = true
+				return m, tea.Quit
+			}
+			m.stopConnect()
+		}
+		return m, m.tickIfNeeded()
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -33,6 +55,9 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.tickIfNeeded()
 		}
 		if m.mode == ModeSelect && m.listLen() > 0 {
+			if m.connectFn != nil {
+				return m, m.startConnect()
+			}
 			list := m.displayServers()
 			m.selected = &list[m.cursorIndex()]
 			return m, tea.Quit

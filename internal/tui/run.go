@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
@@ -21,16 +22,24 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 	defer mon.Stop()
 
 	m := &model{
-		servers: opts.Servers,
-		monitor: mon,
-		results: make(map[string]vpn.ProbeResult),
-		mode:    opts.Mode,
-		watch:   opts.Watch,
+		servers:   opts.Servers,
+		monitor:   mon,
+		results:   make(map[string]vpn.ProbeResult),
+		mode:      opts.Mode,
+		watch:     opts.Watch,
+		ctx:       ctx,
+		connectFn: opts.ConnectFn,
 	}
 
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return vpn.Server{}, false, err
+	}
+
+	// Ensure any connection started inside this run is torn down even if the
+	// program exits without a clean key sequence (e.g. parent context cancel).
+	if m.connCancel != nil {
+		m.connCancel()
 	}
 
 	if m.selected == nil {
@@ -172,6 +181,39 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.geo = geoInfo(msg)
 		m.globeDirty = true
 		return m, m.tickIfNeeded()
+
+	case connMsg:
+		if m.connect == nil {
+			return m, m.tickIfNeeded()
+		}
+		if msg.done {
+			// A user-cancel returns straight to the picker. A failure
+			// keeps the connection screen with the error visible until
+			// dismissed (q/esc/enter).
+			if msg.err != nil && !m.connect.canceled {
+				m.connect.err = msg.err
+				m.connPipe = nil
+				m.connCancel = nil
+				return m, m.tickIfNeeded()
+			}
+			m.connPipe = nil
+			m.connCancel = nil
+			m.connect = nil
+			return m, m.tickIfNeeded()
+		}
+		if msg.line != "" {
+			lines := append(m.connect.lines, msg.line)
+			if len(lines) > maxConnLines {
+				lines = lines[len(lines)-maxConnLines:]
+			}
+			m.connect.lines = lines
+			if strings.Contains(msg.line, "Initialization Sequence Completed") {
+				m.connect.connected = true
+			}
+		}
+		// Advance the connection spinner on each ~150ms heartbeat.
+		m.spin = (m.spin + 1) % len(spinnerFrames)
+		return m, m.connPollCmd()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)

@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	osexec "os/exec"
@@ -13,6 +15,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/rs/zerolog/log"
 
+	"github.com/davegallant/vpngate/internal/tui"
 	"github.com/davegallant/vpngate/pkg/daemon"
 	"github.com/davegallant/vpngate/pkg/vpn"
 	"github.com/spf13/cobra"
@@ -126,6 +129,9 @@ var connectCmd = &cobra.Command{
 			}
 
 		case interactive:
+			if !flagDaemon {
+				return runTuiConnect(cmd.Context(), *vpnServers)
+			}
 			server, ok, err := runTuiPicker(cmd.Context(), *vpnServers)
 			if err != nil {
 				return err
@@ -166,33 +172,8 @@ var connectCmd = &cobra.Command{
 				serverSelected = (*vpnServers)[rand.Intn(len(*vpnServers))]
 			}
 
-			decodedConfig, err := base64.StdEncoding.DecodeString(serverSelected.OpenVpnConfigData)
-			if err != nil {
-				return err
-			}
-
-			tmpfile, err := os.CreateTemp("", "vpngate-openvpn-config-")
-			if err != nil {
-				return err
-			}
-
-			if _, err := tmpfile.Write(decodedConfig); err != nil {
-				_ = tmpfile.Close()
-				_ = os.Remove(tmpfile.Name())
-				return err
-			}
-
-			if err := tmpfile.Close(); err != nil {
-				_ = os.Remove(tmpfile.Name())
-				return err
-			}
-
 			log.Info().Msgf("Connecting to %s (%s) in %s", serverSelected.HostName, serverSelected.IPAddr, serverSelected.CountryLong)
-
-			err = vpn.Connect(tmpfile.Name())
-
-			// Always try to clean up temporary file
-			_ = os.Remove(tmpfile.Name())
+			err = connectServer(cmd.Context(), serverSelected, nil)
 
 			if !flagReconnect {
 				if err != nil {
@@ -202,6 +183,84 @@ var connectCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+// connectServer decodes the server's embedded OpenVPN config, runs openvpn
+// against it until it exits, and streams each output line to emit (when
+// non-nil).
+func connectServer(ctx context.Context, s vpn.Server, emit func(string)) error {
+	decodedConfig, err := base64.StdEncoding.DecodeString(s.OpenVpnConfigData)
+	if err != nil {
+		return err
+	}
+
+	tmpfile, err := os.CreateTemp("", "vpngate-openvpn-config-")
+	if err != nil {
+		return err
+	}
+
+	if _, err := tmpfile.Write(decodedConfig); err != nil {
+		_ = tmpfile.Close()
+		_ = os.Remove(tmpfile.Name())
+		return err
+	}
+
+	if err := tmpfile.Close(); err != nil {
+		_ = os.Remove(tmpfile.Name())
+		return err
+	}
+
+	if emit != nil {
+		emit(fmt.Sprintf("Connecting to %s (%s) in %s", s.HostName, s.IPAddr, s.CountryLong))
+	}
+
+	var out io.Writer
+	if emit != nil {
+		out = lineWriter{emit: emit}
+	}
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	return vpn.ConnectContext(ctx, tmpfile.Name(), out)
+}
+
+// lineWriter adapts a line callback into an io.Writer.
+type lineWriter struct {
+	emit func(string)
+}
+
+// Write splits p on newlines and delivers each non-empty line to emit.
+func (w lineWriter) Write(p []byte) (int, error) {
+	for _, l := range strings.Split(string(p), "\n") {
+		if l != "" {
+			w.emit(l)
+		}
+	}
+	return len(p), nil
+}
+
+// runTuiConnect opens the picker and connects to the chosen server inside
+// the TUI, streaming openvpn output until the user stops it or openvpn
+// exits, then returns to the picker. It returns when the user quits.
+func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
+	restore := quietLogs()
+	defer restore()
+
+	connectFn := func(connCtx context.Context, s vpn.Server, emit func(string)) error {
+		if err := connectServer(connCtx, s, emit); err != nil {
+			return fmt.Errorf("%w%s", err, privilegeHint(err))
+		}
+		return nil
+	}
+
+	_, _, err := tui.Run(ctx, tui.Options{
+		Servers:     servers,
+		Concurrency: flagHealthConcurrency,
+		Timeout:     flagHealthTimeout,
+		Interval:    flagWatchInterval,
+		Mode:        tui.ModeSelect,
+		Watch:       flagWatch,
+		ConnectFn:   connectFn,
+	})
+	return err
 }
 
 // startDaemon re-execs the current binary detached from the terminal so

@@ -1,6 +1,7 @@
 package vpn
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +25,13 @@ func executablePath() string {
 // exits, streaming its output through pkg/exec's logger.
 func Connect(configPath string) error {
 	return exec.Run(executablePath(), ".", "--verb", "4", "--config", configPath, "--data-ciphers", "AES-128-CBC")
+}
+
+// ConnectContext is Connect with a cancelable context and an optional
+// output stream: when ctx is canceled openvpn is killed, and each output
+// line is written to out (when non-nil) as it is produced.
+func ConnectContext(ctx context.Context, configPath string, out io.Writer) error {
+	return exec.RunContext(ctx, executablePath(), ".", out, "--verb", "4", "--config", configPath, "--data-ciphers", "AES-128-CBC")
 }
 
 // ConnectDetached starts openvpn with a management interface enabled at
