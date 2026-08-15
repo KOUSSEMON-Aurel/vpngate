@@ -105,6 +105,28 @@ func TestDisplayServersFallbackOrder(t *testing.T) {
 	}
 }
 
+func TestDisplayServersSearchMatchesSource(t *testing.T) {
+	a := testServer("a")
+	a.Source = vpn.SourceVpnbook
+	b := testServer("b")
+	b.Source = vpn.SourceVpngate
+
+	m := &model{
+		servers:     []vpn.Server{a, b},
+		results:     map[string]vpn.ProbeResult{},
+		workingOnly: false,
+		filter:      "vpnbook",
+	}
+
+	got := m.displayServers()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 server matching source search, got %d: %v", len(got), got)
+	}
+	if got[0].HostName != "a" {
+		t.Fatalf("expected vpnbook server a, got %v", got)
+	}
+}
+
 func TestViewRendersStatusAndFooter(t *testing.T) {
 	a := testServer("a")
 	m := &model{

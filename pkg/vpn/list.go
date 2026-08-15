@@ -28,6 +28,13 @@ const (
 	dialTimeout       = 10 * time.Second
 	fetchRetryDelay   = time.Second
 	fetchRetryCount   = 3
+
+	// SourceVpngate identifies relays advertised by vpngate.net.
+	SourceVpngate = "vpngate"
+	// SourceVpnbook identifies servers advertised by vpnbook.com.
+	SourceVpnbook = "vpnbook"
+	// SourceWarp identifies the Cloudflare WARP tunnel.
+	SourceWarp = "warp"
 )
 
 // vpnList is the URL of the vpngate server list API. It is a var so tests
@@ -61,6 +68,9 @@ type Server struct {
 	Operator string `csv:"Operator"`
 	// Message is an optional operator-supplied note about the relay.
 	Message string `csv:"Message"`
+	// Source is the provider that advertised this server, e.g. SourceVpngate
+	// or SourceVpnbook. It is not part of the vpngate CSV payload.
+	Source string `csv:"-" json:"source,omitempty"`
 }
 
 // Proto returns the tunnel transport ("tcp" or "udp") declared in the
@@ -162,6 +172,7 @@ func parseVpnList(r io.Reader) (*[]Server, error) {
 		if alias, ok := countryAliases[servers[i].CountryLong]; ok {
 			servers[i].CountryLong = alias
 		}
+		servers[i].Source = SourceVpngate
 	}
 
 	return &servers, nil
@@ -243,6 +254,25 @@ func createHTTPClient(httpProxy string, socks5Proxy string) (*http.Client, error
 type ListOptions struct {
 	Refresh bool
 	NoCache bool
+
+	// DisableVpnbook opts out of merging vpnbook.com OpenVPN servers into
+	// the returned list. Merging is enabled by default.
+	DisableVpnbook bool
+}
+
+// mergeVpnbookServers appends vpnbook.com servers to the vpngate list. It
+// returns nil on failure so the caller can keep working with vpngate only.
+func mergeVpnbookServers(client *http.Client, vpngateServers *[]Server) *[]Server {
+	vpnbookServers, err := FetchVpnbookServers(client)
+	if err != nil {
+		log.Warn().Msgf("Unable to fetch vpnbook servers: %s", err)
+		return nil
+	}
+
+	merged := make([]Server, 0, len(*vpngateServers)+len(vpnbookServers))
+	merged = append(merged, (*vpngateServers)...)
+	merged = append(merged, vpnbookServers...)
+	return &merged
 }
 
 // GetList returns a list of vpn servers.
@@ -297,6 +327,13 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 		}
 
 		servers = parsedServers
+
+		// Merge vpnbook.com servers into the list, unless opted out.
+		if !opts.DisableVpnbook {
+			if merged := mergeVpnbookServers(client, servers); merged != nil {
+				servers = merged
+			}
+		}
 
 		// Cache the servers for future use, unless caching is disabled.
 		if !opts.NoCache {

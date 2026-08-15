@@ -17,6 +17,7 @@ func resetFilterFlags() {
 	flagMaxPing = 0
 	flagMinScore = 0
 	flagProto = ""
+	flagSource = ""
 }
 
 func TestFilterServersByCountryCode(t *testing.T) {
@@ -151,4 +152,23 @@ func TestFilterServersByProto(t *testing.T) {
 	got = filterServers(&servers)
 	assert.Len(t, *got, 1)
 	assert.Equal(t, "udp-relay", (*got)[0].HostName)
+}
+
+func TestFilterServersBySource(t *testing.T) {
+	defer resetFilterFlags()
+	servers := []vpn.Server{
+		{HostName: "a", Source: vpn.SourceVpngate},
+		{HostName: "b", Source: vpn.SourceVpnbook},
+		{HostName: "c"},
+	}
+
+	flagSource = "vpnbook"
+	got := filterServers(&servers)
+	assert.Len(t, *got, 1)
+	assert.Equal(t, "b", (*got)[0].HostName)
+
+	flagSource = "VPNGATE"
+	got = filterServers(&servers)
+	assert.Len(t, *got, 1)
+	assert.Equal(t, "a", (*got)[0].HostName)
 }

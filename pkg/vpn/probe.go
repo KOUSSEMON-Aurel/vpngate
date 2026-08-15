@@ -187,6 +187,18 @@ func probeOpenVPN(ctx context.Context, server *Server, timeout time.Duration) Pr
 		"--verb", "3",
 	}
 
+	// vpnbook configs carry a bare "auth-user-pass" directive that would
+	// block on stdin waiting for credentials; pass the shared credentials
+	// file explicitly so the probe can complete.
+	if server.Source == SourceVpnbook {
+		credsFile, err := vpnbookCredsFileFor()
+		if err != nil {
+			_ = os.Remove(tmpfile.Name())
+			return ProbeResult{Status: ProbeError, Detail: "vpnbook credentials unavailable: " + err.Error()}
+		}
+		args = append(args, "--auth-user-pass", credsFile)
+	}
+
 	cmd := exec.CommandContext(ctx, bin, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

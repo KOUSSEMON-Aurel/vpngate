@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -146,11 +145,11 @@ func (s *supervisor) run() error {
 // successful connection, records daemon state, and blocks until it
 // exits (either on its own or because handleStop signaled it).
 func (s *supervisor) connectOnce(server vpn.Server) error {
-	decoded, err := base64.StdEncoding.DecodeString(server.OpenVpnConfigData)
+	configData, err := vpn.ServerConfig(server)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(daemon.ConfigPath(), decoded, 0o600); err != nil {
+	if err := os.WriteFile(daemon.ConfigPath(), configData, 0o600); err != nil {
 		return err
 	}
 
@@ -159,7 +158,7 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 		return err
 	}
 
-	cmd, err := vpn.ConnectDetached(daemon.ConfigPath(), mgmtAddr, s.logFile, daemon.DetachAttr())
+	cmd, err := vpn.ClientFor(server).ConnectDetached(server, daemon.ConfigPath(), mgmtAddr, s.logFile, daemon.DetachAttr())
 	if err != nil {
 		return fmt.Errorf("starting openvpn: %w", err)
 	}

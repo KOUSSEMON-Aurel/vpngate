@@ -57,7 +57,7 @@ func (m *model) displayServers() []vpn.Server {
 		f := strings.ToLower(m.filter)
 		out := make([]vpn.Server, 0, len(servers))
 		for _, s := range servers {
-			needle := strings.ToLower(s.HostName + " " + s.IPAddr + " " + s.CountryLong + " " + s.CountryShort)
+			needle := strings.ToLower(s.HostName + " " + s.IPAddr + " " + s.CountryLong + " " + s.CountryShort + " " + s.Source)
 			if strings.Contains(needle, f) {
 				out = append(out, s)
 			}

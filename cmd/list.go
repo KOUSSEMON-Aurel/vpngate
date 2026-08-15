@@ -21,6 +21,7 @@ func init() {
 	listCmd.Flags().IntVar(&flagMaxPing, "max-ping", 0, "filter out servers with ping higher than this value")
 	listCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
 	listCmd.Flags().StringVar(&flagProto, "proto", "", "filter by tunnel transport (tcp or udp)")
+	listCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate or vpnbook)")
 	listCmd.Flags().StringVar(&flagSort, "sort", "none", "sort by one of none, score, ping, country, hostname")
 	listCmd.Flags().StringVarP(&flagOutput, "output", "o", outputTable, "output format: table, json, csv")
 	listCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before listing")
@@ -74,20 +75,20 @@ var listCmd = &cobra.Command{
 
 		table := tw.NewWriter(os.Stdout)
 		if flagHealthCheck {
-			table.Header([]string{"#", "HostName", "Country", "Proto", "Ping", "Status", "Latency", "Score"})
+			table.Header([]string{"#", "HostName", "Country", "Proto", "Source", "Ping", "Status", "Latency", "Score"})
 		} else {
-			table.Header([]string{"#", "HostName", "Country", "Proto", "Ping", "Score", "Speed", "Sessions", "Operator"})
+			table.Header([]string{"#", "HostName", "Country", "Proto", "Source", "Ping", "Score", "Speed", "Sessions", "Operator"})
 		}
 
 		for i, v := range *vpnServers {
 			if flagHealthCheck {
 				r := probeResults[v.HostName]
-				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Proto(), v.Ping, probeStatusLabel(r.Status), probeLatencyLabel(r.LatencyMs), strconv.Itoa(v.Score)})
+				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Proto(), sourceLabel(v), v.Ping, probeStatusLabel(r.Status), probeLatencyLabel(r.LatencyMs), strconv.Itoa(v.Score)})
 				if err != nil {
 					return err
 				}
 			} else {
-				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Proto(), v.Ping, strconv.Itoa(v.Score), v.SpeedLabel(), strconv.Itoa(v.NumVpnSessions), truncateOperator(v.Operator)}); err != nil {
+				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Proto(), sourceLabel(v), v.Ping, strconv.Itoa(v.Score), v.SpeedLabel(), strconv.Itoa(v.NumVpnSessions), truncateOperator(v.Operator)}); err != nil {
 					return err
 				}
 			}

@@ -324,12 +324,13 @@ func (m *model) columnHeader(w int) string {
 			"LATENCY",
 		)
 	} else {
-		line = fmt.Sprintf(" %-*s %-11s %s%-9s %-8s %-7s",
+		line = fmt.Sprintf(" %-*s %-11s %s%-9s %-8s %-7s %-8s",
 			hostW, "HOSTNAME",
 			"STATUS",
 			"", "COUNTRY",
 			"LATENCY",
 			"SCORE",
+			"SOURCE",
 		)
 	}
 	return styleHeader.Render(truncate(line, w)) + "\n"
@@ -342,7 +343,7 @@ func (m *model) hostWidth(w int) int {
 		// the list still fits next to the world map on narrow terminals.
 		fixed = 1 + 1 + 1 + 1 + 1 + colStatusW + 1 + 2 + 7 + 1 + 7
 	} else {
-		fixed = 1 + 1 + colStatusW + colCountryW + colLatencyW + colScoreW + 4
+		fixed = 1 + 1 + colStatusW + colCountryW + colLatencyW + colScoreW + 4 + 9
 	}
 	hostW := w - fixed
 	if hostW < 10 {
@@ -352,6 +353,15 @@ func (m *model) hostWidth(w int) int {
 		hostW = 40
 	}
 	return hostW
+}
+
+// sourceLabel renders a server's source for the list column, falling back to
+// a dash when the source is unknown (e.g. hand-built servers in tests).
+func sourceLabel(source string) string {
+	if source == "" {
+		return "-"
+	}
+	return source
 }
 
 // spinnerFor returns the animated frame for a server whose state is not yet
@@ -413,11 +423,12 @@ func (m *model) row(s vpn.Server, i int, w int) string {
 			latency,
 		)
 	} else {
-		line = fmt.Sprintf(" %s %s %-*s %s %s%-9s %-8s %-7d",
+		line = fmt.Sprintf(" %s %s %-*s %s %s%-9s %-8s %-7d %-8s",
 			marker, icon, hostW, host,
 			status,
 			flag, country,
 			latency, s.Score,
+			sourceLabel(s.Source),
 		)
 	}
 
@@ -459,7 +470,7 @@ func (m *model) detailPane(w int) string {
 	var b strings.Builder
 	title := fmt.Sprintf(" %s %s %s %s", icon, s.HostName, flag, truncate(s.CountryLong, 12))
 	b.WriteString(styleHeader.Render(truncate(title, w)) + "\n")
-	line2 := fmt.Sprintf("   ip %-15s  score %-8d  latency %s  %s", truncate(s.IPAddr, 15), s.Score, latency, status)
+	line2 := fmt.Sprintf("   ip %-15s  score %-8d  latency %s  source %-8s  %s", truncate(s.IPAddr, 15), s.Score, latency, sourceLabel(s.Source), status)
 	b.WriteString(truncate(line2, w) + "\n")
 	line3 := "   verdict  " + info.style.Render(verdict)
 	b.WriteString(truncate(line3, w) + "\n")

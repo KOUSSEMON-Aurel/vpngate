@@ -3,11 +3,13 @@ package vpn
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -274,5 +276,67 @@ func TestProbeServerInitThenAuthFailed(t *testing.T) {
 	result := ProbeServer(context.Background(), &server, 5*time.Second)
 	if result.Status != ProbeAuthFailed {
 		t.Fatalf("expected auth_failed (relay full), got %v (detail: %s)", result.Status, result.Detail)
+	}
+}
+
+// TestProbeOpenVPNVpnbookAddsAuthUserPass verifies a vpnbook probe passes
+// the shared credentials file explicitly, so the bare "auth-user-pass"
+// directive in vpnbook configs does not block the probe on stdin.
+func TestProbeOpenVPNVpnbookAddsAuthUserPass(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake openvpn stub requires a POSIX shell")
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cacheDir := filepath.Join(home, ".vpngate", "cache")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cacheData, err := json.Marshal(VpnbookCredentials{Username: "vpnbook", Password: "secret", UpdatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, vpnbookCredsCacheFile), cacheData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	bin := filepath.Join(dir, "openvpn")
+	script := "#!/bin/sh\necho \"$@\" > \"" + argsFile + "\"\necho 'PUSH_REPLY,route 0.0.0.0 0.0.0.0'\nsleep 30\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(probeOpenVPNBinEnv, bin)
+
+	server := &Server{
+		HostName:          "us16",
+		OpenVpnConfigData: base64.StdEncoding.EncodeToString([]byte("client\nremote 1.2.3.4 443 tcp\n")),
+		Source:            SourceVpnbook,
+	}
+	result := probeOpenVPN(context.Background(), server, 5*time.Second)
+	if result.Status != ProbeWorking {
+		t.Fatalf("expected working, got %v (detail: %s)", result.Status, result.Detail)
+	}
+
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "--auth-user-pass") {
+		t.Fatalf("expected --auth-user-pass in probe args: %s", args)
+	}
+
+	credsFile := filepath.Join(home, ".vpngate", "cache", vpnbookCredsFile)
+	if !strings.Contains(string(args), credsFile) {
+		t.Fatalf("expected creds file %q in probe args: %s", credsFile, args)
+	}
+	content, err := os.ReadFile(credsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "vpnbook\nsecret\n" {
+		t.Fatalf("unexpected creds file content: %q", content)
 	}
 }

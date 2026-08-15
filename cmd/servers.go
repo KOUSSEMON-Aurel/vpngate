@@ -23,6 +23,7 @@ var (
 	flagMaxPing           int
 	flagMinScore          int
 	flagProto             string
+	flagSource            string
 	flagSort              string
 	flagOutput            string
 	flagRefresh           bool
@@ -52,6 +53,10 @@ func filterServers(servers *[]vpn.Server) *[]vpn.Server {
 		}
 
 		if flagProto != "" && server.Proto() != strings.ToLower(flagProto) {
+			continue
+		}
+
+		if flagSource != "" && !strings.EqualFold(server.Source, flagSource) {
 			continue
 		}
 
@@ -102,12 +107,12 @@ func writeServersCSV(servers *[]vpn.Server) error {
 	writer := csv.NewWriter(os.Stdout)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
+	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Source", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
 		return err
 	}
 
 	for _, server := range *servers {
-		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), server.Ping, strconv.Itoa(server.Score), server.SpeedLabel(), strconv.Itoa(server.NumVpnSessions), server.UptimeLabel(), server.Operator}); err != nil {
+		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), sourceLabel(server), server.Ping, strconv.Itoa(server.Score), server.SpeedLabel(), strconv.Itoa(server.NumVpnSessions), server.UptimeLabel(), server.Operator}); err != nil {
 			return err
 		}
 	}
@@ -123,6 +128,15 @@ func truncateOperator(s string) string {
 		return s
 	}
 	return s[:23] + "…"
+}
+
+// sourceLabel renders a server's source for table output, falling back to a
+// dash when the source is unknown (e.g. hand-built servers).
+func sourceLabel(s vpn.Server) string {
+	if s.Source == "" {
+		return "-"
+	}
+	return s.Source
 }
 
 func validateProtoFlag() error {

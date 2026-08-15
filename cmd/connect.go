@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +51,7 @@ func init() {
 	connectCmd.Flags().IntVar(&flagMaxPing, "max-ping", 0, "filter out servers with ping higher than this value")
 	connectCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
 	connectCmd.Flags().StringVar(&flagProto, "proto", "", "filter by tunnel transport (tcp or udp)")
+	connectCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate or vpnbook)")
 	connectCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before connecting")
 	connectCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
 	connectCmd.Flags().BoolVarP(&flagDaemon, "daemon", "d", false, "run the connection in the background; see 'vpngate status' and 'vpngate disconnect'")
@@ -665,71 +665,18 @@ func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[s
 	return cands
 }
 
-// connectServer decodes the server's embedded OpenVPN config and runs
-// openvpn against it until it exits, streaming each output line to out
-// (when non-nil). Debug verbosity (--verb 5) can be enabled with
+// connectServer runs the tunnel for s via the Client matching its Source,
+// streaming each output line to out (when non-nil) until openvpn exits or
+// ctx is canceled. Debug verbosity (--verb 5) can be enabled with
 // VPNGATE_DEBUG.
 func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
-	decodedConfig, err := base64.StdEncoding.DecodeString(s.OpenVpnConfigData)
-	if err != nil {
-		return err
-	}
-
-	tmpfile, err := os.CreateTemp("", "vpngate-openvpn-config-")
-	if err != nil {
-		return err
-	}
-
-	if _, err := tmpfile.Write(decodedConfig); err != nil {
-		_ = tmpfile.Close()
-		_ = os.Remove(tmpfile.Name())
-		return err
-	}
-
-	// vpngate relays are IPv4-only: on a host that also routes IPv6,
-	// browsers would bypass the tunnel over IPv6 and reveal the real
-	// location. Ask openvpn to fold IPv6 into the tunnel when the host
-	// has a default IPv6 route; on IPv6-less hosts (where no leak is
-	// possible) the directive is skipped so openvpn does not warn about
-	// an IPv6 route it cannot apply.
-	if hostRoutesIPv6() {
-		if _, err := tmpfile.WriteString("\n# vpngate: force all IPv6 into the tunnel (relays are IPv4-only)\nroute-ipv6 ::/0\n"); err != nil {
-			_ = tmpfile.Close()
-			_ = os.Remove(tmpfile.Name())
-			return err
-		}
-	}
-
-	if err := tmpfile.Close(); err != nil {
-		_ = os.Remove(tmpfile.Name())
-		return err
-	}
-
-	defer func() { _ = os.Remove(tmpfile.Name()) }()
-
-	verb := 4
-	if os.Getenv("VPNGATE_DEBUG") != "" {
-		verb = 5
-		log.Debug().Msgf("debug: connecting with verbosity %d to %s (%s)", verb, s.HostName, s.IPAddr)
-	}
-	return vpn.ConnectContextWithVerb(ctx, tmpfile.Name(), out, verb)
+	return vpn.ClientFor(s).Connect(ctx, s, out)
 }
 
 // hostRoutesIPv6 reports whether the host has a default IPv6 route, i.e.
-// real IPv6 connectivity that could bypass the IPv4-only tunnel. It reads
-// /proc/net/ipv6_route (Linux) and treats absence as "no IPv6" everywhere.
+// real IPv6 connectivity that could bypass the IPv4-only tunnel.
 func hostRoutesIPv6() bool {
-	raw, err := os.ReadFile("/proc/net/ipv6_route")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(raw), "\n") {
-		f := strings.Fields(line)
-		if len(f) >= 2 && f[0] == "00000000000000000000000000000000" && f[1] == "00" {
-			return true
-		}
-	}
-	return false
+	return vpn.HostRoutesIPv6()
 }
 
 // runTuiConnect opens the picker and connects to the chosen server inside
