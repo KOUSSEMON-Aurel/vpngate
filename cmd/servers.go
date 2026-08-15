@@ -107,7 +107,7 @@ func writeServersCSV(servers *[]vpn.Server) error {
 	writer := csv.NewWriter(os.Stdout)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Source", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
+	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Provider", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
 		return err
 	}
 

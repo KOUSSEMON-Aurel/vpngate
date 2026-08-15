@@ -75,9 +75,9 @@ var listCmd = &cobra.Command{
 
 		table := tw.NewWriter(os.Stdout)
 		if flagHealthCheck {
-			table.Header([]string{"#", "HostName", "Country", "Proto", "Source", "Ping", "Status", "Latency", "Score"})
+			table.Header([]string{"#", "HostName", "Country", "Proto", "Provider", "Ping", "Status", "Latency", "Score"})
 		} else {
-			table.Header([]string{"#", "HostName", "Country", "Proto", "Source", "Ping", "Score", "Speed", "Sessions", "Operator"})
+			table.Header([]string{"#", "HostName", "Country", "Proto", "Provider", "Ping", "Score", "Speed", "Sessions", "Operator"})
 		}
 
 		for i, v := range *vpnServers {
