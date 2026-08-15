@@ -317,19 +317,17 @@ func (m *model) columnHeader(w int) string {
 	hostW := m.hostWidth(w)
 	var line string
 	if w < 64 {
-		line = fmt.Sprintf(" %-*s %-11s %-6s %s%-7s %-7s %-8s",
+		line = fmt.Sprintf(" %-*s %-11s %s%-7s %-7s %-8s",
 			hostW, "HOSTNAME",
 			"STATUS",
-			"PROTO",
 			"", "COUNTRY",
 			"LATENCY",
 			"PROVIDER",
 		)
 	} else {
-		line = fmt.Sprintf(" %-*s %-11s %-6s %s%-9s %-8s %-7s %-8s",
+		line = fmt.Sprintf(" %-*s %-11s %s%-9s %-8s %-7s %-8s",
 			hostW, "HOSTNAME",
 			"STATUS",
-			"PROTO",
 			"", "COUNTRY",
 			"LATENCY",
 			"SCORE",
@@ -344,9 +342,9 @@ func (m *model) hostWidth(w int) int {
 	if w < 64 {
 		// Compact layout: drop the score column, tighten country/latency so
 		// the list still fits next to the world map on narrow terminals.
-		fixed = 1 + 1 + 1 + 1 + 1 + colStatusW + colProtoW + 1 + 2 + 7 + 1 + 7 + 8
+		fixed = 1 + 1 + 1 + 1 + 1 + colStatusW + 1 + 2 + 7 + 1 + 7 + 8
 	} else {
-		fixed = 1 + 1 + colStatusW + colProtoW + colCountryW + colLatencyW + colScoreW + 4 + 9
+		fixed = 1 + 1 + colStatusW + colCountryW + colLatencyW + colScoreW + 4 + 9
 	}
 	hostW := w - fixed
 	if hostW < 10 {
@@ -419,19 +417,17 @@ func (m *model) row(s vpn.Server, i int, w int) string {
 
 	var line string
 	if w < 64 {
-		line = fmt.Sprintf(" %s %s %-*s %s %-6s %s%-7s %-7s %-8s",
+		line = fmt.Sprintf(" %s %s %-*s %s %s%-7s %-7s %-8s",
 			marker, icon, hostW, host,
 			status,
-			s.Proto(),
 			flag, country,
 			latency,
 			sourceLabel(s.Source),
 		)
 	} else {
-		line = fmt.Sprintf(" %s %s %-*s %s %-6s %s%-9s %-8s %-7d %-8s",
+		line = fmt.Sprintf(" %s %s %-*s %s %s%-9s %-8s %-7d %-8s",
 			marker, icon, hostW, host,
 			status,
-			s.Proto(),
 			flag, country,
 			latency, s.Score,
 			sourceLabel(s.Source),
@@ -476,7 +472,7 @@ func (m *model) detailPane(w int) string {
 	var b strings.Builder
 	title := fmt.Sprintf(" %s %s %s %s", icon, s.HostName, flag, truncate(s.CountryLong, 12))
 	b.WriteString(styleHeader.Render(truncate(title, w)) + "\n")
-	line2 := fmt.Sprintf("   ip %-15s  score %-8d  latency %s  proto %-5s  provider %-8s  %s", truncate(s.IPAddr, 15), s.Score, latency, s.Proto(), sourceLabel(s.Source), status)
+	line2 := fmt.Sprintf("   ip %-15s  score %-8d  latency %s  provider %-8s  %s", truncate(s.IPAddr, 15), s.Score, latency, sourceLabel(s.Source), status)
 	b.WriteString(truncate(line2, w) + "\n")
 	line3 := "   verdict  " + info.style.Render(verdict)
 	b.WriteString(truncate(line3, w) + "\n")

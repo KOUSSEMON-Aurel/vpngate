@@ -179,7 +179,6 @@ var (
 // Column widths for the fixed-width fields; the hostname takes the rest.
 const (
 	colStatusW   = 12 // "unreachable" + space
-	colProtoW    = 6  // "tcp"/"udp" + space
 	colLatencyW  = 9  // "2414ms" + space
 	colScoreW    = 8
 	colCountryW  = 13 // flag (2) + space + 9 runes + space
