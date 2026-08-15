@@ -200,7 +200,9 @@ func wgcfEnsureProfile(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	register := exec.Command("wgcf", "register")
+	// wgcf register asks for consent to Cloudflare's ToS interactively;
+	// --accept-tos keeps first-run provisioning non-interactive.
+	register := exec.Command("wgcf", "register", "--accept-tos")
 	register.Dir = dir
 	register.Stdout = os.Stdout
 	register.Stderr = os.Stderr

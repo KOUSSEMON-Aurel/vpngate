@@ -74,7 +74,7 @@ func TestWarpWgcfProfileFlag(t *testing.T) {
 	assert.Equal(t, "/tmp/custom-wgcf.conf", profile)
 }
 
-// TestWarpWgcfProfileDefault verifies the default profile path lives under
+// TestWarpWgcfEnsureProfileDefault verifies the default profile path lives under
 // $XDG_CONFIG_HOME/wgcf on Linux.
 func TestWarpWgcfProfileDefault(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -86,4 +86,22 @@ func TestWarpWgcfProfileDefault(t *testing.T) {
 	profile, err := warpWgcfProfile()
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(configHome, "wgcf", "wgcf-profile.conf"), profile)
+}
+
+// TestWarpWgcfEnsureProfileAcceptTos verifies wgcf register is invoked
+// non-interactively with --accept-tos so first-run provisioning never
+// blocks on Cloudflare's ToS prompt.
+func TestWarpWgcfEnsureProfileAcceptTos(t *testing.T) {
+	bin := t.TempDir()
+	argsFile := filepath.Join(t.TempDir(), "wgcf-args")
+	script := "#!/bin/sh\necho \"$@\" >> " + argsFile + "\nexit 0\n"
+	assert.NoError(t, os.WriteFile(filepath.Join(bin, "wgcf"), []byte(script), 0o755))
+	t.Setenv("PATH", bin)
+
+	profileDir := t.TempDir()
+	assert.NoError(t, wgcfEnsureProfile(profileDir))
+
+	args, err := os.ReadFile(argsFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "register --accept-tos\ngenerate\n", string(args))
 }
