@@ -326,6 +326,27 @@ func connectAttempt(ctx context.Context, s vpn.Server, emit func(string)) connec
 		cancel()
 		<-runErrCh
 		return connectAttemptResult{err: ctx.Err()}
+
+	case err := <-runErrCh:
+		// openvpn exited before the startup deadline. Classify the exit
+		// against the marker channels: connectServer only sends on
+		// runErrCh after openvpn's output has been fully drained, so
+		// initDone/authDone are in their final state here and the nested
+		// select is race-free.
+		select {
+		case <-tw.authDone:
+			return connectAttemptResult{err: errors.New("relay refused the connection"), authFailed: true}
+		case <-tw.initDone:
+			return connectAttemptResult{err: err, initialized: true}
+		default:
+		}
+		if ctx.Err() != nil {
+			return connectAttemptResult{err: ctx.Err()}
+		}
+		if err == nil {
+			err = errors.New("openvpn exited before initializing the tunnel")
+		}
+		return connectAttemptResult{err: err}
 	}
 }
 
@@ -668,11 +689,18 @@ func startDaemon(serverSelected vpn.Server) error {
 	if err := child.Start(); err != nil {
 		return fmt.Errorf("starting background daemon: %w", err)
 	}
-	if err := child.Process.Release(); err != nil {
-		return err
-	}
 
-	return waitForDaemonReady(30 * time.Second)
+	// The child is not released: waitForDaemonReady must learn when the
+	// daemon dies before ever reporting a connection (e.g. openvpn cannot
+	// create a tun device), so a goroutine reaps it and closes
+	// daemonExited.
+	daemonExited := make(chan struct{})
+	go func() {
+		_ = child.Wait()
+		close(daemonExited)
+	}()
+
+	return waitForDaemonReady(daemonExited, connectStartupDeadline)
 }
 
 // forwardableConnectArgs reproduces the subset of connect's own flags
@@ -719,10 +747,13 @@ func forwardableConnectArgs() []string {
 	return args
 }
 
-// waitForDaemonReady polls for the daemon's state file to appear,
-// signalling a successful first connection, surfacing the tail of the
-// daemon log if it times out instead.
-func waitForDaemonReady(timeout time.Duration) error {
+// waitForDaemonReady waits for the daemon's state file to appear,
+// signalling a successful first connection. If the daemon process exits
+// before that (daemonExited closes) or the timeout elapses, the tail of
+// the daemon log is surfaced so the underlying failure reason (e.g.
+// openvpn cannot create a tun device) is visible instead of a bare
+// timeout.
+func waitForDaemonReady(daemonExited <-chan struct{}, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
 		state, err := daemon.Load()
@@ -733,10 +764,19 @@ func waitForDaemonReady(timeout time.Duration) error {
 		if !os.IsNotExist(err) {
 			return err
 		}
+		select {
+		case <-daemonExited:
+			tail := tailLog()
+			msg := fmt.Sprintf("background connection failed; see %s", daemon.LogPath())
+			if tail != "" {
+				msg += "\n" + tail + privilegeHint(errors.New(tail))
+			}
+			return errors.New(msg)
+		case <-time.After(200 * time.Millisecond):
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out waiting for background connection; see %s\n%s", daemon.LogPath(), tailLog())
 		}
-		time.Sleep(200 * time.Millisecond)
 	}
 }
 
@@ -802,8 +842,11 @@ func countryFlag(countryShort string) string {
 // empty string otherwise.
 func privilegeHint(err error) string {
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "tunsetiff") || strings.Contains(msg, "not permitted") || strings.Contains(msg, "permission denied") {
+	switch {
+	case strings.Contains(msg, "tunsetiff"), strings.Contains(msg, "not permitted"), strings.Contains(msg, "permission denied"):
 		return " (openvpn needs elevated privileges to create a tun interface; re-run with sudo, e.g. 'sudo vpngate connect')"
+	case strings.Contains(msg, "cannot open tun/tap"), strings.Contains(msg, "no such device"):
+		return " (openvpn could not create the tun interface: the 'tun' kernel module is probably not loaded; run 'sudo modprobe tun' to load it)"
 	}
 	return ""
 }

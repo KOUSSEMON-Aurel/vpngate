@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -32,6 +33,12 @@ type supervisor struct {
 	startedAt time.Time
 	mgmt      *daemon.Management
 	stopping  bool
+	// stateMu serializes management "state" queries. The management socket
+	// is request/response and its bufio.Reader is not safe for concurrent
+	// reads, and both waitForConnected (during a connect that can now take
+	// up to connectStartupDeadline) and handleStatus (on a `status`
+	// request) query it.
+	stateMu sync.Mutex
 }
 
 // runSupervisor is the entry point used when connect is re-exec'd with
@@ -181,6 +188,31 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 	s.mgmt = mgmt
 	s.mu.Unlock()
 
+	// The management interface comes up while openvpn is still handshaking
+	// — and, in the worst case, about to die (e.g. "Cannot open TUN/TAP dev
+	// /dev/net/tun"). Only publish daemon state once the tunnel is actually
+	// up, so "Connected in background" is never printed for a connection
+	// that never comes up.
+	if err := s.waitForConnected(mgmt, connectStartupDeadline); err != nil {
+		s.mu.Lock()
+		s.mgmt = nil
+		s.mu.Unlock()
+
+		if errors.Is(err, errTunnelStopped) {
+			// The user asked to disconnect while the tunnel was still
+			// coming up: report a clean stop, not an error.
+			_ = mgmt.Disconnect()
+			_ = mgmt.Close()
+			_ = cmd.Wait()
+			return nil
+		}
+
+		_ = mgmt.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return err
+	}
+
 	if err := daemon.Save(daemon.State{
 		PID:         os.Getpid(),
 		ControlAddr: s.control.Addr(),
@@ -240,6 +272,49 @@ func waitForManagement(addr string, timeout time.Duration) (*daemon.Management, 
 	}
 }
 
+// errTunnelStopped is returned by waitForConnected when a stop was
+// requested while openvpn was still bringing the tunnel up.
+var errTunnelStopped = errors.New("disconnect requested while connecting")
+
+// waitForConnected blocks until openvpn's management interface reports
+// state CONNECTED, the tunnel process exits (State() then fails because
+// the management socket closes), a disconnect is requested, or timeout
+// elapses. It is what makes connectOnce fail fast when openvpn dies during
+// the handshake instead of publishing a connection that never came up.
+func (s *supervisor) waitForConnected(mgmt *daemon.Management, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		s.mu.Lock()
+		stopping := s.stopping
+		s.mu.Unlock()
+		if stopping {
+			return errTunnelStopped
+		}
+
+		s.stateMu.Lock()
+		state, err := mgmt.State()
+		s.stateMu.Unlock()
+		if err != nil {
+			s.mu.Lock()
+			stopping := s.stopping
+			s.mu.Unlock()
+			if stopping {
+				// handleStop signaled openvpn mid-query; the socket
+				// closing is the result of the stop, not a failure.
+				return errTunnelStopped
+			}
+			return fmt.Errorf("management interface closed before the tunnel was up: %w", err)
+		}
+		if state == "CONNECTED" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("tunnel not up within %s (state: %s)", timeout, state)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // handleStatus answers a STATUS control request with the supervisor's
 // current view of the connection.
 func (s *supervisor) handleStatus() (daemon.Snapshot, error) {
@@ -251,7 +326,10 @@ func (s *supervisor) handleStatus() (daemon.Snapshot, error) {
 
 	state := "CONNECTING"
 	if mgmt != nil {
-		if st, err := mgmt.State(); err == nil {
+		s.stateMu.Lock()
+		st, err := mgmt.State()
+		s.stateMu.Unlock()
+		if err == nil {
 			state = st
 		}
 	}

@@ -228,6 +228,40 @@ func TestConnectAttemptAuthFailed(t *testing.T) {
 	}
 }
 
+// TestConnectAttemptCrashFailsFast verifies an openvpn that exits before
+// initializing the tunnel is reported immediately instead of being held
+// until the startup deadline.
+func TestConnectAttemptCrashFailsFast(t *testing.T) {
+	fakeOpenVPNBin(t)
+	connectStartupDeadline = 5 * time.Second
+	defer func() { connectStartupDeadline = 40 * time.Second }()
+
+	start := time.Now()
+	res := connectAttempt(context.Background(), fakeServer("crash"), nil)
+	elapsed := time.Since(start)
+
+	assert.Error(t, res.err)
+	assert.False(t, res.authFailed)
+	assert.Contains(t, res.err.Error(), "cannot open TUN/TAP", "expected the openvpn error to surface")
+	if elapsed > 3*time.Second {
+		t.Fatalf("crash attempt took too long to fail: %s (deadline was %s)", elapsed, connectStartupDeadline)
+	}
+}
+
+// TestPrivilegeHintTunModule verifies the hint suggests loading the tun
+// kernel module when openvpn cannot open /dev/net/tun.
+func TestPrivilegeHintTunModule(t *testing.T) {
+	hint := privilegeHint(errors.New("exit status 1: ERROR: Cannot open TUN/TAP dev /dev/net/tun: No such device (errno=19)"))
+	assert.Contains(t, hint, "sudo modprobe tun")
+}
+
+// TestPrivilegeHintPermissions verifies the hint suggests re-running with
+// sudo when openvpn reports insufficient privileges.
+func TestPrivilegeHintPermissions(t *testing.T) {
+	hint := privilegeHint(errors.New("ERROR: Cannot open TUN/TAP dev /dev/net/tun: Operation not permitted (errno=1)"))
+	assert.Contains(t, hint, "sudo vpngate connect")
+}
+
 // TestConnectWithRetryCancelDuringAttempt verifies that canceling while a
 // relay is still connecting returns promptly (and never panics on a send
 // racing with the output stream being closed).
