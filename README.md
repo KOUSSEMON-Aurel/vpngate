@@ -157,6 +157,38 @@ Comportement configurable :
 | `--watch` | `true` | revérification continue en arrière-plan |
 | `--watch-interval` | `30s` | fréquence de revérification |
 
+## Garde-fou du tunnel connecté
+
+Une fois connecté, vpngate surveille le tunnel vivant et le **répare ou le laisse tranquille** intelligemment. Les relais vpngate.net sont communautaires et leur sortie (egress) est souvent partielle ou instable — un seul endpoint de santé provoquait des faux négatifs (tunnel tué à tort → chaîne de reconnexion → « all 8 attempted relays failed »).
+
+Le check de santé est donc **multi-endpoints** : `www.gstatic.com/generate_204`, `www.google.com/generate_204`, `https://1.1.1.1/cdn-cgi/trace` et `https://8.8.8.8/` sont sondés en parallèle, et **une seule réponse HTTP quelconque** (n'importe quel code) suffit à considérer le tunnel vivant. Deux endpoints sont en IP pure (pas de dépendance au DNS du tunnel).
+
+Le watchdog n'est pas brutal :
+
+- **Fenêtre de grâce** : aucun check pendant les 30 premières secondes après connexion.
+- **Seuil de 5 échecs consécutifs** (toutes les 10 s) avant de couper et de passer au relais suivant : un à-coup d'egress ne fait plus tomber une connexion saine.
+- Seul un relais dont **tous** les endpoints échouent en continu (~80 s) est déclaré mort et remplacé.
+
+### Mettre le garde-fou en pause
+
+Pendant la connexion, appuyez sur **`p`** dans le TUI : le footer passe de `[p] health on` à `[p] health off` et le watchdog cesse de sonder — **une connexion vivante n'est alors jamais coupée par vpngate**, même sur un relais à l'egress chaotique. Re-appuyez sur `p` pour reprendre la surveillance.
+
+En ligne de commande, le garde-fou se désactive complètement avec `--tunnel-health-check=false` :
+
+```shell
+sudo vpngate connect --tunnel-health-check=false
+```
+
+Comportement configurable (sondes toutes les 10 s, grâce de 30 s, seuil de 5 échecs — valeurs internes) :
+
+| Option | Défaut | Description |
+|---|---|---|
+| `--tunnel-health-check` | `true` | surveille le tunnel une fois connecté (sondes HTTPS multi-endpoints) |
+
+## Idées futures (TODO)
+
+- **`container-as-gateway` + kill switch** : router tout le trafic de la machine via un conteneur OpenVPN (passerelle par défaut = conteneur), avec règles nftables/iptables bloquant toute sortie hors du tunnel (`DROP` sauf via `tun0`), IPv6 bloqué et DNS forcé dans le tunnel → **zéro fuite** (IP et DNS) même si le tunnel tombe. Docker seul en `--network host` n'isole ni ne reroute rien : il partage le réseau de l'hôte.
+
 ## Notes
 
 - Je ne maintiens aucun des serveurs de vpngate.net (connexion à ces serveurs à vos risques et périls).

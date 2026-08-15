@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Keep connected tunnels alive on relays with partial or flaky egress: the live-tunnel watchdog now probes several HTTPS endpoints in parallel (`gstatic`, `google`, `1.1.1.1`, `8.8.8.8` — two in pure IP) and treats any HTTP response as alive, instead of relying on a single `gstatic.com/generate_204` probe that produced false negatives and endless reconnect chains.
+- Make the watchdog less aggressive: a 30s grace window after connect and a threshold of 5 consecutive failures (~80s) before a relay is considered dead, so a transient outage no longer drops a working tunnel.
+- Add a TUI `p` key to pause the watchdog while connected (footer shows `[p] health on/off`) and a `--tunnel-health-check=false` flag to disable it entirely, so a connected tunnel is never dropped by vpngate.
+- Regenerate the demo GIF and document the watchdog and its pause toggle in the README.
+
 ## 0.8.0
 
 - Verify servers with a real OpenVPN probe before offering them: candidates are probed by actually running `openvpn` and only servers that complete the handshake (`PUSH_REPLY`) are considered usable. This filters out the many full/maintenance servers on vpngate.net that pass a plain TCP/TLS check but reject authentication (`AUTH_FAILED`).
