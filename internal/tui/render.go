@@ -260,10 +260,29 @@ func (m *model) titleBar(w int) string {
 	if m.sortMode != sortModeDefault {
 		right = fmt.Sprintf(" %s · %d relays · %s · sort %s ", mode, len(m.servers), watch, sortModeName(m.sortMode))
 	}
+	badge := m.privBadge()
+	// Reserve room for the badge at the right edge so it survives
+	// truncation: only the informative segment shrinks.
 	full := left + right
+	infoW := w - lipgloss.Width(badge)
 	// Render before truncating: styleTitle pads with one space on each side,
 	// and truncating first would push the line past the terminal width.
-	return truncate(styleTitle.Render(full), w) + "\n"
+	return truncate(styleTitle.Render(full), infoW) + badge + "\n"
+}
+
+// privBadge renders the privilege state as a short badge, or "" when it
+// carries no information (e.g. unsupported platform).
+func (m *model) privBadge() string {
+	switch m.priv {
+	case privRoot:
+		return stylePrivOK.Render(" sudo ")
+	case privCapNetAdmin:
+		return stylePrivOK.Render(" cap_net_admin ")
+	case privNone:
+		return stylePrivWarn.Render(" no sudo ")
+	default:
+		return ""
+	}
 }
 
 func (m *model) statusBar(w int) string {

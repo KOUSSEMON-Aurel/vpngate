@@ -113,6 +113,10 @@ type model struct {
 	connect     *connectState
 	connCancel  context.CancelFunc
 	connPipe    chan connMsg
+	// priv records how the process can create a tun interface (sudo,
+	// CAP_NET_ADMIN on a binary, or not at all). Detected once at startup
+	// and shown as a badge in the title bar.
+	priv privState
 	// connPanel shows the live connection log panel instead of the list.
 	// It is toggled with the left/right arrows; the list stays the base
 	// view at all times.
@@ -168,6 +172,8 @@ var (
 	styleMarkerVpn    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))  // exit pin: blue
 	styleMarkerRim    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("88"))  // home pin behind the globe: dim red
 	styleMarkerVpnRim = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("24"))  // exit pin behind the globe: dim blue
+	stylePrivOK       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))   // sudo / CAP_NET_ADMIN badge: green
+	stylePrivWarn     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))  // no-sudo badge: red
 )
 
 // Column widths for the fixed-width fields; the hostname takes the rest.

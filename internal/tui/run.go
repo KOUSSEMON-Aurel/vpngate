@@ -30,6 +30,7 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 		ctx:         ctx,
 		connectFn:   opts.ConnectFn,
 		healthPause: opts.HealthPause,
+		priv:        detectPrivilege(),
 	}
 
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen())
