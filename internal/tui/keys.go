@@ -36,6 +36,14 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "right":
 			m.connPanel = false
 			return m, m.tickIfNeeded()
+		case "p":
+			// Toggle the live-tunnel watchdog pause. While paused the
+			// watchdog stops probing, so a connected tunnel is never
+			// dropped by it — even on a relay whose egress is flaky.
+			if m.healthPause != nil {
+				m.healthPause.Store(!m.healthPause.Load())
+			}
+			return m, m.tickIfNeeded()
 		}
 
 		// Inside the log panel only panel keys apply: arrows scroll, esc or

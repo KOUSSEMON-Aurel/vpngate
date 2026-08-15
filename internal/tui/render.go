@@ -502,6 +502,13 @@ func (m *model) footer(w int) string {
 		// statuses on screen are the last real-path measurements.
 		b.WriteString(styleDim.Render("  [←] logs"))
 		b.WriteString(styleDim.Render("  [q] stop"))
+		if m.healthPause != nil {
+			label := "on"
+			if m.healthPause.Load() {
+				label = "off"
+			}
+			b.WriteString(styleDim.Render(fmt.Sprintf("  [p] health %s", label)))
+		}
 	} else {
 		b.WriteString(" [↑/↓ j/k] move")
 		if m.mode == ModeSelect {

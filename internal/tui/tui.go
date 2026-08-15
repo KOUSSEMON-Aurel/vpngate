@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -38,6 +39,11 @@ type Options struct {
 	// latest probe verdicts so the connection can prefer relays that are
 	// actually reachable.
 	ConnectFn func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error
+	// HealthPause, when non-nil, is the pause switch of the live-tunnel
+	// watchdog. While a connection is up the p key toggles it: paused, the
+	// watchdog stops probing and can never drop the tunnel. Nil hides the
+	// toggle.
+	HealthPause *atomic.Bool
 }
 
 // connMsg streams one output line from an in-TUI connection, or marks its
@@ -101,6 +107,9 @@ type model struct {
 	pendingH    int
 	ctx         context.Context
 	connectFn   func(ctx context.Context, server vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error
+	// healthPause is the shared pause switch of the live-tunnel watchdog,
+	// toggled with the p key while a connection is up. Nil hides the toggle.
+	healthPause *atomic.Bool
 	connect     *connectState
 	connCancel  context.CancelFunc
 	connPipe    chan connMsg

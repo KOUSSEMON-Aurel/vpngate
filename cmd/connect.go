@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -39,6 +40,7 @@ var (
 	flagHealthTimeout  time.Duration
 	flagWatch          bool
 	flagWatchInterval  time.Duration
+	flagTunnelHealth   bool
 )
 
 func init() {
@@ -62,6 +64,7 @@ func init() {
 	connectCmd.Flags().DurationVar(&flagHealthTimeout, "health-timeout", 5*time.Second, "per-server health probe timeout")
 	connectCmd.Flags().BoolVar(&flagWatch, "watch", true, "keep re-verifying server health in the background")
 	connectCmd.Flags().DurationVar(&flagWatchInterval, "watch-interval", 30*time.Second, "how often to re-verify servers in the background")
+	connectCmd.Flags().BoolVar(&flagTunnelHealth, "tunnel-health-check", true, "verify the live tunnel keeps carrying traffic and reconnect when it stops (disable to never drop a connected tunnel)")
 	connectCmd.Flags().BoolVar(&flagBest, "best", false, "automatically select the fastest working server without prompting")
 	connectCmd.Flags().BoolVar(&flagTUI, "tui", true, "use the interactive server picker instead of the plain survey")
 	rootCmd.AddCommand(connectCmd)
@@ -183,7 +186,7 @@ var connectCmd = &cobra.Command{
 			}
 
 			log.Info().Msgf("Connecting to %s (%s) in %s", serverSelected.HostName, serverSelected.IPAddr, serverSelected.CountryLong)
-			err = connectWithRetry(cmd.Context(), orderedCandidates(*vpnServers, serverSelected, probeResults), nil)
+			err = connectWithRetry(cmd.Context(), orderedCandidates(*vpnServers, serverSelected, probeResults), nil, tunnelHealthFromFlag())
 
 			if !flagReconnect {
 				if err != nil {
@@ -210,7 +213,7 @@ const maxConnectAttempts = 8
 // initialize within connectStartupDeadline is abandoned and the next
 // candidate is tried. Once a tunnel is up the function blocks until ctx is
 // canceled (the user stops the connection) or the tunnel drops.
-func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(string)) error {
+func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(string), health *tunnelHealth) error {
 	if len(candidates) == 0 {
 		return errors.New("no servers to try")
 	}
@@ -229,7 +232,7 @@ func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(st
 		}
 		log.Info().Msgf("Attempt %d/%d: connecting to %s (%s)", i+1, attempts, s.HostName, s.IPAddr)
 
-		result := connectAttempt(ctx, s, emit)
+		result := connectAttempt(ctx, s, emit, health)
 
 		switch {
 		case result.err == nil && ctx.Err() == nil:
@@ -283,7 +286,7 @@ type connectAttemptResult struct {
 // when the relay sent AUTH_FAILED. Any other error means the relay never
 // produced a working tunnel within the startup deadline or exited
 // abnormally before doing so.
-func connectAttempt(ctx context.Context, s vpn.Server, emit func(string)) connectAttemptResult {
+func connectAttempt(ctx context.Context, s vpn.Server, emit func(string), health *tunnelHealth) connectAttemptResult {
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -306,7 +309,7 @@ func connectAttempt(ctx context.Context, s vpn.Server, emit func(string)) connec
 			emit(fmt.Sprintf("[vpngate] connected via %s", s.HostName))
 		}
 		go verifyTunnel(emit)
-		go keepTunnelAlive(attemptCtx, cancel, emit)
+		go keepTunnelAlive(attemptCtx, cancel, emit, health)
 		err := <-runErrCh
 		if ctx.Err() != nil {
 			// User stop: not an error.
@@ -389,25 +392,102 @@ func (w *trackedWriter) Write(p []byte) (int, error) {
 // Overridable in tests.
 var tunnelHealthInterval = 10 * time.Second
 
+// tunnelHealthGrace is how long after the tunnel comes up before the first
+// health check runs. vpngate relays are community boxes with slow, bursty
+// egress: checking immediately would judge the tunnel on its very first
+// seconds and kill relays that are perfectly usable once settled.
+// Overridable in tests.
+var tunnelHealthGrace = 30 * time.Second
+
 // tunnelHealthMaxFails is how many consecutive failed health checks are
 // tolerated before the tunnel is declared dead and the attempt restarts.
-var tunnelHealthMaxFails = 3
+var tunnelHealthMaxFails = 5
 
-// tunnelHealthCheck performs one liveness probe of the tunnel: an HTTPS
-// 204 over the tunnel. Overridable in tests.
-var tunnelHealthCheck = func() error {
-	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Get("https://www.gstatic.com/generate_204")
-	if resp != nil {
-		_ = resp.Body.Close()
+// tunnelHealthTimeout bounds one round of probes. Overridable in tests.
+var tunnelHealthTimeout = 6 * time.Second
+
+// tunnelHealthEndpoints is the set of HTTPS probes used to decide whether a
+// live tunnel still egresses. Any HTTP response (any status code) proves the
+// tunnel forwards traffic, so a relay with partial egress — one ISP's network
+// reachable but not another's, or DNS broken through the tunnel — is judged
+// alive as long as at least one endpoint answers. The mix deliberately spans
+// DNS-resolved hosts and pure-IP endpoints so a broken DNS resolver inside
+// the tunnel cannot alone kill the connection. Overridable in tests.
+var tunnelHealthEndpoints = []string{
+	"https://www.gstatic.com/generate_204",
+	"https://www.google.com/generate_204",
+	"https://1.1.1.1/cdn-cgi/trace",
+	"https://8.8.8.8/",
+}
+
+// tunnelHealthCheck performs one liveness probe of the tunnel: it fires the
+// tunnelHealthEndpoints in parallel and reports success as soon as any of
+// them answers with an HTTP response. Overridable in tests.
+var tunnelHealthCheck = realTunnelHealthCheck
+
+// realTunnelHealthCheck is the production probe behind tunnelHealthCheck.
+func realTunnelHealthCheck() error {
+	ctx, cancel := context.WithTimeout(context.Background(), tunnelHealthTimeout)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	firstErr := make(chan error, len(tunnelHealthEndpoints))
+	ok := make(chan struct{}, 1)
+
+	for _, ep := range tunnelHealthEndpoints {
+		ep := ep
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, ep, nil)
+			if err != nil {
+				firstErr <- err
+				return
+			}
+			resp, err := (&http.Client{}).Do(req)
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			if err != nil {
+				firstErr <- err
+				return
+			}
+			select {
+			case ok <- struct{}{}:
+			default:
+			}
+		}()
 	}
-	if err != nil {
-		return err
+	wg.Wait()
+
+	select {
+	case <-ok:
+		return nil
+	default:
 	}
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	return errors.New("no HTTPS through the tunnel (no response from any endpoint)")
+}
+
+// tunnelHealth controls the live-tunnel watchdog from a single owner.
+// pause, when non-nil, lets the TUI suspend checks at runtime (the p key);
+// while paused the watchdog skips probes and never accumulates failures, so
+// a connected tunnel is never dropped by it.
+type tunnelHealth struct {
+	pause *atomic.Bool
+}
+
+// paused reports whether the watchdog is currently suspended.
+func (h *tunnelHealth) paused() bool {
+	return h != nil && h.pause != nil && h.pause.Load()
+}
+
+// tunnelHealthFromFlag builds the watchdog policy for a connect invocation.
+// A nil return disables the watchdog entirely (--tunnel-health-check=false).
+func tunnelHealthFromFlag() *tunnelHealth {
+	if !flagTunnelHealth {
+		return nil
 	}
-	return nil
+	return &tunnelHealth{}
 }
 
 // keepTunnelAlive periodically verifies that traffic actually egresses
@@ -416,8 +496,22 @@ var tunnelHealthCheck = func() error {
 // After tunnelHealthMaxFails consecutive failures the attempt context is
 // canceled, openvpn is torn down, and the retry chain moves to the next
 // relay (emitting the "tunnel dropped; reconnecting" marker through
-// connectAttempt's result path). Stops when attemptCtx is done.
-func keepTunnelAlive(ctx context.Context, cancel context.CancelFunc, emit func(string)) {
+// connectAttempt's result path). Stops when attemptCtx is done. A nil
+// health disables monitoring. Checks never run during tunnelHealthGrace,
+// and are skipped (never counted) while the watchdog is paused.
+func keepTunnelAlive(ctx context.Context, cancel context.CancelFunc, emit func(string), health *tunnelHealth) {
+	if health == nil {
+		return
+	}
+
+	// Grace period: hold off the first check so a relay that is still
+	// settling its egress is not judged on its first seconds.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(tunnelHealthGrace):
+	}
+
 	t := time.NewTicker(tunnelHealthInterval)
 	defer t.Stop()
 
@@ -427,6 +521,14 @@ func keepTunnelAlive(ctx context.Context, cancel context.CancelFunc, emit func(s
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+
+		if health.paused() {
+			// Suspended by the user (TUI p key): a paused watchdog must
+			// not accumulate failures, otherwise resuming would trigger
+			// an immediate kill for noise collected while paused.
+			fails = 0
+			continue
 		}
 
 		if err := tunnelHealthCheck(); err == nil {
@@ -472,18 +574,12 @@ func verifyTunnel(emit func(string)) {
 	}
 
 	start := time.Now()
-	resp, err := geoHTTPClient.Get("https://www.gstatic.com/generate_204")
-	if err != nil {
+	if err := tunnelHealthCheck(); err != nil {
 		emit(fmt.Sprintf("[vpngate] WARNING: tunnel check failed: no HTTPS through the tunnel (%v)", err))
 		return
 	}
-	_ = resp.Body.Close()
 	ms := time.Since(start).Milliseconds()
-	if resp.StatusCode != http.StatusNoContent {
-		emit(fmt.Sprintf("[vpngate] WARNING: tunnel check returned HTTP %d in %dms", resp.StatusCode, ms))
-		return
-	}
-	emit(fmt.Sprintf("[vpngate] tunnel verified: HTTPS 204 through the tunnel in %dms", ms))
+	emit(fmt.Sprintf("[vpngate] tunnel verified: HTTPS through the tunnel in %dms", ms))
 
 	// api4.ipify.org answers only over IPv4, so the exit IP reported is
 	// the IPv4 tunnel exit regardless of host IPv6 configuration.
@@ -643,8 +739,18 @@ func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
 	restore := quietLogs()
 	defer restore()
 
+	// The live-tunnel watchdog runs in the TUI like everywhere else, but
+	// its pause flag is shared with the model so the p key can suspend it
+	// at runtime.
+	var healthPause *atomic.Bool
+	var health *tunnelHealth
+	if flagTunnelHealth {
+		healthPause = &atomic.Bool{}
+		health = &tunnelHealth{pause: healthPause}
+	}
+
 	connectFn := func(connCtx context.Context, s vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
-		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, results), emit); err != nil {
+		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, results), emit, health); err != nil {
 			return fmt.Errorf("%w%s", err, privilegeHint(err))
 		}
 		return nil
@@ -658,6 +764,7 @@ func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
 		Mode:        tui.ModeSelect,
 		Watch:       flagWatch,
 		ConnectFn:   connectFn,
+		HealthPause: healthPause,
 	})
 	return err
 }

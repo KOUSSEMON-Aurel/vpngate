@@ -22,13 +22,14 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 	defer mon.Stop()
 
 	m := &model{
-		servers:   opts.Servers,
-		monitor:   mon,
-		results:   make(map[string]vpn.ProbeResult),
-		mode:      opts.Mode,
-		watch:     opts.Watch,
-		ctx:       ctx,
-		connectFn: opts.ConnectFn,
+		servers:     opts.Servers,
+		monitor:     mon,
+		results:     make(map[string]vpn.ProbeResult),
+		mode:        opts.Mode,
+		watch:       opts.Watch,
+		ctx:         ctx,
+		connectFn:   opts.ConnectFn,
+		healthPause: opts.HealthPause,
 	}
 
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen())

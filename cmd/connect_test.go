@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,7 +87,7 @@ func TestConnectWithRetryFirstSucceeds(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- connectWithRetry(ctx, []vpn.Server{fakeServer("ok"), fakeServer("crash")}, func(s string) { emitted = append(emitted, s) })
+		done <- connectWithRetry(ctx, []vpn.Server{fakeServer("ok"), fakeServer("crash")}, func(s string) { emitted = append(emitted, s) }, nil)
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -118,7 +121,7 @@ func TestConnectWithRetryAuthThenSuccess(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- connectWithRetry(ctx, []vpn.Server{fakeServer("auth"), fakeServer("ok")}, func(s string) { emitted = append(emitted, s) })
+		done <- connectWithRetry(ctx, []vpn.Server{fakeServer("auth"), fakeServer("ok")}, func(s string) { emitted = append(emitted, s) }, nil)
 	}()
 
 	deadline := time.Now().Add(8 * time.Second)
@@ -150,7 +153,7 @@ func TestConnectWithRetryAllFail(t *testing.T) {
 	defer func() { connectStartupDeadline = 40 * time.Second }()
 
 	var emitted []string
-	err := connectWithRetry(context.Background(), []vpn.Server{fakeServer("auth"), fakeServer("crash")}, func(s string) { emitted = append(emitted, s) })
+	err := connectWithRetry(context.Background(), []vpn.Server{fakeServer("auth"), fakeServer("crash")}, func(s string) { emitted = append(emitted, s) }, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "all 2 attempted relays failed")
 	assert.Contains(t, err.Error(), "refused the connection")
@@ -170,7 +173,7 @@ func TestConnectWithRetrySlowThenSuccess(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- connectWithRetry(ctx, []vpn.Server{fakeServer("slow"), fakeServer("ok")}, func(s string) { emitted = append(emitted, s) })
+		done <- connectWithRetry(ctx, []vpn.Server{fakeServer("slow"), fakeServer("ok")}, func(s string) { emitted = append(emitted, s) }, nil)
 	}()
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -220,7 +223,7 @@ func TestConnectAttemptAuthFailed(t *testing.T) {
 	connectStartupDeadline = 2 * time.Second
 	defer func() { connectStartupDeadline = 40 * time.Second }()
 
-	res := connectAttempt(context.Background(), fakeServer("auth"), nil)
+	res := connectAttempt(context.Background(), fakeServer("auth"), nil, nil)
 	assert.True(t, res.authFailed)
 	assert.Error(t, res.err)
 	if !errors.Is(res.err, errors.New("relay refused the connection")) {
@@ -237,7 +240,7 @@ func TestConnectAttemptCrashFailsFast(t *testing.T) {
 	defer func() { connectStartupDeadline = 40 * time.Second }()
 
 	start := time.Now()
-	res := connectAttempt(context.Background(), fakeServer("crash"), nil)
+	res := connectAttempt(context.Background(), fakeServer("crash"), nil, nil)
 	elapsed := time.Since(start)
 
 	assert.Error(t, res.err)
@@ -277,7 +280,7 @@ func TestConnectWithRetryCancelDuringAttempt(t *testing.T) {
 	}()
 
 	start := time.Now()
-	err := connectWithRetry(ctx, []vpn.Server{fakeServer("slow")}, func(string) {})
+	err := connectWithRetry(ctx, []vpn.Server{fakeServer("slow")}, func(string) {}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -291,17 +294,20 @@ func TestConnectWithRetryCancelDuringAttempt(t *testing.T) {
 func TestKeepAliveHealthyTunnelStaysUp(t *testing.T) {
 	oldInterval := tunnelHealthInterval
 	oldCheck := tunnelHealthCheck
+	oldGrace := tunnelHealthGrace
 	t.Cleanup(func() {
 		tunnelHealthInterval = oldInterval
 		tunnelHealthCheck = oldCheck
+		tunnelHealthGrace = oldGrace
 	})
 	tunnelHealthInterval = 20 * time.Millisecond
+	tunnelHealthGrace = 0
 	tunnelHealthCheck = func() error { return nil }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		keepTunnelAlive(ctx, cancel, nil)
+		keepTunnelAlive(ctx, cancel, nil, &tunnelHealth{})
 		close(done)
 	}()
 
@@ -319,18 +325,21 @@ func TestKeepAliveDeadTunnelCancels(t *testing.T) {
 	oldInterval := tunnelHealthInterval
 	oldMax := tunnelHealthMaxFails
 	oldCheck := tunnelHealthCheck
+	oldGrace := tunnelHealthGrace
 	t.Cleanup(func() {
 		tunnelHealthInterval = oldInterval
 		tunnelHealthMaxFails = oldMax
 		tunnelHealthCheck = oldCheck
+		tunnelHealthGrace = oldGrace
 	})
 	tunnelHealthInterval = 20 * time.Millisecond
+	tunnelHealthGrace = 0
 	tunnelHealthMaxFails = 2
 	tunnelHealthCheck = func() error { return errors.New("no egress") }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var lines []string
-	keepTunnelAlive(ctx, cancel, func(line string) { lines = append(lines, line) })
+	keepTunnelAlive(ctx, cancel, func(line string) { lines = append(lines, line) }, &tunnelHealth{})
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -399,4 +408,135 @@ func TestConnectAttemptConfigBlackholesIPv6(t *testing.T) {
 	} else if strings.Contains(cfg, "route-ipv6") {
 		t.Fatalf("config contains IPv6 black-hole on IPv6-less host:\n%s", cfg)
 	}
+}
+
+// TestTunnelHealthCheckAnyEndpoint verifies the tunnel is judged alive as
+// soon as any probe endpoint answers, mirroring the partial egress seen on
+// real relays: one endpoint unreachable must not kill a tunnel another
+// endpoint proves working.
+func TestTunnelHealthCheckAnyEndpoint(t *testing.T) {
+	// One working endpoint among dead ones: the check must pass even
+	// though every other probe fails. The dead endpoint's handler blocks
+	// until the request context expires (the shared probe timeout), then
+	// returns so its httptest server can shut down cleanly.
+	var dead *httptest.Server
+	dead = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer dead.Close()
+
+	alive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer alive.Close()
+
+	oldEndpoints := tunnelHealthEndpoints
+	oldCheck := tunnelHealthCheck
+	oldTimeout := tunnelHealthTimeout
+	t.Cleanup(func() {
+		tunnelHealthEndpoints = oldEndpoints
+		tunnelHealthCheck = oldCheck
+		tunnelHealthTimeout = oldTimeout
+	})
+	tunnelHealthEndpoints = []string{dead.URL, alive.URL}
+	tunnelHealthTimeout = 300 * time.Millisecond
+	tunnelHealthCheck = realTunnelHealthCheck
+
+	if err := tunnelHealthCheck(); err != nil {
+		t.Fatalf("tunnel judged dead with a working endpoint: %v", err)
+	}
+}
+
+// TestTunnelHealthCheckAllDead verifies a tunnel fails the check only when
+// every endpoint is unreachable.
+func TestTunnelHealthCheckAllDead(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer dead.Close()
+
+	oldEndpoints := tunnelHealthEndpoints
+	oldCheck := tunnelHealthCheck
+	oldTimeout := tunnelHealthTimeout
+	t.Cleanup(func() {
+		tunnelHealthEndpoints = oldEndpoints
+		tunnelHealthCheck = oldCheck
+		tunnelHealthTimeout = oldTimeout
+	})
+	tunnelHealthEndpoints = []string{dead.URL}
+	tunnelHealthTimeout = 300 * time.Millisecond
+	tunnelHealthCheck = realTunnelHealthCheck
+
+	if err := tunnelHealthCheck(); err == nil {
+		t.Fatal("tunnel judged alive with every endpoint unreachable")
+	}
+}
+
+// TestKeepAlivePausedNeverCancels verifies a paused watchdog skips probes
+// and accumulates no failures, so a tunnel whose egress is flaky is never
+// dropped by it while the pause is on.
+func TestKeepAlivePausedNeverCancels(t *testing.T) {
+	oldInterval := tunnelHealthInterval
+	oldMax := tunnelHealthMaxFails
+	oldCheck := tunnelHealthCheck
+	oldGrace := tunnelHealthGrace
+	t.Cleanup(func() {
+		tunnelHealthInterval = oldInterval
+		tunnelHealthMaxFails = oldMax
+		tunnelHealthCheck = oldCheck
+		tunnelHealthGrace = oldGrace
+	})
+	tunnelHealthInterval = 20 * time.Millisecond
+	tunnelHealthGrace = 0
+	tunnelHealthMaxFails = 1
+	tunnelHealthCheck = func() error { return errors.New("no egress") }
+
+	var pause atomic.Bool
+	pause.Store(true)
+	health := &tunnelHealth{pause: &pause}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		keepTunnelAlive(ctx, cancel, nil, health)
+		close(done)
+	}()
+
+	time.Sleep(120 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatal("paused watchdog canceled the tunnel")
+	}
+	cancel()
+	<-done
+}
+
+// TestKeepAliveGraceWindowSkipsEarlyChecks verifies no health check runs
+// during the grace period after the tunnel comes up.
+func TestKeepAliveGraceWindowSkipsEarlyChecks(t *testing.T) {
+	oldInterval := tunnelHealthInterval
+	oldGrace := tunnelHealthGrace
+	oldCheck := tunnelHealthCheck
+	t.Cleanup(func() {
+		tunnelHealthInterval = oldInterval
+		tunnelHealthGrace = oldGrace
+		tunnelHealthCheck = oldCheck
+	})
+	tunnelHealthInterval = 20 * time.Millisecond
+	tunnelHealthGrace = 100 * time.Millisecond
+	var checks atomic.Int64
+	tunnelHealthCheck = func() error { checks.Add(1); return nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		keepTunnelAlive(ctx, cancel, nil, &tunnelHealth{})
+		close(done)
+	}()
+
+	time.Sleep(60 * time.Millisecond)
+	if got := checks.Load(); got != 0 {
+		t.Fatalf("health check ran during the grace window (%d checks)", got)
+	}
+	cancel()
+	<-done
 }
