@@ -46,6 +46,42 @@ func fakeOpenVPN(t *testing.T, marker string) (cleanup func()) {
 	}
 }
 
+// fakeOpenVPNSeq writes an executable stub that emits each line in order,
+// sleeping delay between lines, so tests can model the real OpenVPN
+// handshake ordering (e.g. "Peer Connection Initiated" followed later by
+// "AUTH_FAILED").
+func fakeOpenVPNSeq(t *testing.T, delay time.Duration, lines ...string) (cleanup func()) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("fake openvpn stub requires a POSIX shell")
+	}
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "openvpn")
+	script := "#!/bin/sh\n"
+	for _, l := range lines {
+		script += "echo '" + l + "'\n"
+		script += "sleep " + strconv.FormatFloat(delay.Seconds(), 'f', 1, 64) + "\n"
+	}
+	script += "sleep 30\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	old := os.Getenv(probeOpenVPNBinEnv)
+	if err := os.Setenv(probeOpenVPNBinEnv, bin); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		if old == "" {
+			_ = os.Unsetenv(probeOpenVPNBinEnv)
+		} else {
+			_ = os.Setenv(probeOpenVPNBinEnv, old)
+		}
+	}
+}
+
 // serverWithConfig builds a Server whose config points at host:port.
 func serverWithConfig(host, port string) Server {
 	cfg := "client\nremote " + host + " " + port + " tcp\ntls-client\n"
@@ -199,5 +235,44 @@ func TestBestWorkingServer(t *testing.T) {
 	_, err = BestWorkingServer([]Server{a, b, c}, map[string]ProbeResult{})
 	if err == nil {
 		t.Fatal("expected error when no working servers")
+	}
+}
+
+// TestProbeServerTlsInitNotWorking verifies that reaching a TLS session
+// ("Peer Connection Initiated") alone is not sufficient to report a relay as
+// working; a full/maintenance relay still rejects credentials with AUTH_FAILED
+// afterward, so the probe must classify it as not-working (timeout here).
+func TestProbeServerTlsInitNotWorking(t *testing.T) {
+	cleanup := fakeOpenVPN(t, "Peer Connection Initiated with [AF_INET]1.2.3.4:443")
+	defer cleanup()
+
+	host, port, close := localTCPListener(t)
+	defer close()
+
+	server := serverWithConfig(host, port)
+	result := ProbeServer(context.Background(), &server, 3*time.Second)
+	if result.Status == ProbeWorking {
+		t.Fatalf("expected NOT working for a relay that only reaches TLS init, got %v", result.Status)
+	}
+}
+
+// TestProbeServerInitThenAuthFailed verifies the real failure mode: a relay
+// completes the TLS handshake ("Peer Connection Initiated") and then rejects
+// credentials with AUTH_FAILED. The probe must classify it as auth_failed, not
+// working, so the TUI/--best never steer into a full relay.
+func TestProbeServerInitThenAuthFailed(t *testing.T) {
+	cleanup := fakeOpenVPNSeq(t, 1*time.Second,
+		"Peer Connection Initiated with [AF_INET]1.2.3.4:443",
+		"AUTH_FAILED",
+	)
+	defer cleanup()
+
+	host, port, close := localTCPListener(t)
+	defer close()
+
+	server := serverWithConfig(host, port)
+	result := ProbeServer(context.Background(), &server, 5*time.Second)
+	if result.Status != ProbeAuthFailed {
+		t.Fatalf("expected auth_failed (relay full), got %v (detail: %s)", result.Status, result.Detail)
 	}
 }

@@ -350,6 +350,10 @@ func TestKeepAliveDeadTunnelCancels(t *testing.T) {
 // TestConnectAttemptConfigBlackholesIPv6 verifies the client config written
 // for every attempt forces IPv6 into the tunnel so no traffic can bypass it.
 func TestConnectAttemptConfigBlackholesIPv6(t *testing.T) {
+	// Isolate the temp dir so stale configs left behind by real connect
+	// sessions (they linger in /tmp after a hard kill) can never be
+	// mistaken for this attempt's freshly written config.
+	t.Setenv("TMPDIR", t.TempDir())
 	fakeOpenVPNBin(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

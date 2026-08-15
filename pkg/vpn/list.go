@@ -3,10 +3,12 @@ package vpn
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jszwec/csvutil"
@@ -41,6 +43,35 @@ type Server struct {
 	OpenVpnConfigData string `csv:"OpenVPN_ConfigData_Base64"`
 	Ping              string `csv:"Ping"`
 	LatencyMs         int    `csv:"-" json:"latency_ms,omitempty"`
+}
+
+// Proto returns the tunnel transport ("tcp" or "udp") declared in the
+// relay's OpenVPN configuration, or "" when it cannot be determined.
+// vpngate relays listen on either UDP (the default) or TCP, and an ISP may
+// handle the two transports very differently, so callers can filter on it.
+func (s Server) Proto() string {
+	if s.OpenVpnConfigData == "" {
+		return ""
+	}
+
+	config, err := base64.StdEncoding.DecodeString(s.OpenVpnConfigData)
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(config), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "proto" {
+			switch fields[1] {
+			case "tcp", "tcp-client", "tcp4", "tcp6":
+				return "tcp"
+			case "udp", "udp4", "udp6":
+				return "udp"
+			}
+		}
+	}
+
+	return ""
 }
 
 // parseVpnList parses the VPN server list from CSV format

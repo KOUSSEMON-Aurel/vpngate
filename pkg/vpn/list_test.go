@@ -1,6 +1,7 @@
 package vpn
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,37 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestServerProto(t *testing.T) {
+	enc := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
+	tests := []struct {
+		name string
+		conf string
+		want string
+	}{
+		{"tcp", "client\ndev tun\nproto tcp\nremote 1.2.3.4 1458", "tcp"},
+		{"tcp-client", "client\nproto tcp-client\nremote 1.2.3.4 443", "tcp"},
+		{"udp", "client\nproto udp\nremote 1.2.3.4 1194", "udp"},
+		{"commented proto line only", "client\n# proto tcp\nproto udp\n", "udp"},
+		{"no proto line", "client\nremote 1.2.3.4 1194", ""},
+		{"empty config", "", ""},
+		{"invalid base64", "!!!not-base64!!!", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var configData string
+			if tt.conf != "invalid base64" {
+				configData = enc(tt.conf)
+			} else {
+				configData = tt.conf
+			}
+			s := Server{OpenVpnConfigData: configData}
+			assert.Equal(t, tt.want, s.Proto())
+		})
+	}
+}
 
 // TestGetListWithOptions fetches and parses a local fixture served over
 // HTTP, exercising the same code path as a real fetch without depending on

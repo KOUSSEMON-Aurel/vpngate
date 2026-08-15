@@ -1,16 +1,22 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/davegallant/vpngate/pkg/vpn"
 	"github.com/stretchr/testify/assert"
 )
 
+func base64Encode(s string) string {
+	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
 func resetFilterFlags() {
 	flagCountry = ""
 	flagMaxPing = 0
 	flagMinScore = 0
+	flagProto = ""
 }
 
 func TestFilterServersByCountryCode(t *testing.T) {
@@ -114,4 +120,35 @@ func TestValidateOutputFlag(t *testing.T) {
 
 	flagOutput = "bogus"
 	assert.Error(t, validateOutputFlag())
+}
+
+func TestValidateProtoFlag(t *testing.T) {
+	defer resetFilterFlags()
+
+	assert.NoError(t, validateProtoFlag())
+
+	flagProto = "TCP"
+	assert.NoError(t, validateProtoFlag())
+
+	flagProto = "bogus"
+	assert.Error(t, validateProtoFlag())
+}
+
+func TestFilterServersByProto(t *testing.T) {
+	defer resetFilterFlags()
+	servers := []vpn.Server{
+		{HostName: "tcp-relay", OpenVpnConfigData: base64Encode("client\nproto tcp\nremote 1.2.3.4 1458")},
+		{HostName: "udp-relay", OpenVpnConfigData: base64Encode("client\nproto udp\nremote 1.2.3.4 1194")},
+		{HostName: "unknown-relay", OpenVpnConfigData: ""},
+	}
+
+	flagProto = "tcp"
+	got := filterServers(&servers)
+	assert.Len(t, *got, 1)
+	assert.Equal(t, "tcp-relay", (*got)[0].HostName)
+
+	flagProto = "udp"
+	got = filterServers(&servers)
+	assert.Len(t, *got, 1)
+	assert.Equal(t, "udp-relay", (*got)[0].HostName)
 }

@@ -49,6 +49,7 @@ func init() {
 	connectCmd.Flags().StringVar(&flagCountry, "country", "", "filter by country name or country code (i.e. Japan or jp)")
 	connectCmd.Flags().IntVar(&flagMaxPing, "max-ping", 0, "filter out servers with ping higher than this value")
 	connectCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
+	connectCmd.Flags().StringVar(&flagProto, "proto", "", "filter by tunnel transport (tcp or udp)")
 	connectCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before connecting")
 	connectCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
 	connectCmd.Flags().BoolVarP(&flagDaemon, "daemon", "d", false, "run the connection in the background; see 'vpngate status' and 'vpngate disconnect'")
@@ -74,6 +75,10 @@ var connectCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if flagDaemonRun {
 			return runSupervisor()
+		}
+
+		if err := validateProtoFlag(); err != nil {
+			return err
 		}
 
 		vpnServers, err := vpn.GetListWithOptions(flagProxy, flagSocks5Proxy, vpn.ListOptions{Refresh: flagRefresh, NoCache: flagNoCache})
@@ -728,6 +733,9 @@ func forwardableConnectArgs() []string {
 	}
 	if flagMinScore != 0 {
 		args = append(args, "--min-score", strconv.Itoa(flagMinScore))
+	}
+	if flagProto != "" {
+		args = append(args, "--proto", flagProto)
 	}
 	if flagRefresh {
 		args = append(args, "--refresh")

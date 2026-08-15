@@ -22,6 +22,7 @@ var (
 	flagCountry           string
 	flagMaxPing           int
 	flagMinScore          int
+	flagProto             string
 	flagSort              string
 	flagOutput            string
 	flagRefresh           bool
@@ -48,6 +49,10 @@ func filterServers(servers *[]vpn.Server) *[]vpn.Server {
 			if err != nil || ping > flagMaxPing {
 				continue
 			}
+		}
+
+		if flagProto != "" && server.Proto() != strings.ToLower(flagProto) {
+			continue
 		}
 
 		filtered = append(filtered, server)
@@ -97,17 +102,26 @@ func writeServersCSV(servers *[]vpn.Server) error {
 	writer := csv.NewWriter(os.Stdout)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Ping", "Score"}); err != nil {
+	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Ping", "Score"}); err != nil {
 		return err
 	}
 
 	for _, server := range *servers {
-		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Ping, strconv.Itoa(server.Score)}); err != nil {
+		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), server.Ping, strconv.Itoa(server.Score)}); err != nil {
 			return err
 		}
 	}
 
 	return writer.Error()
+}
+
+func validateProtoFlag() error {
+	switch strings.ToLower(flagProto) {
+	case "", "tcp", "udp":
+		return nil
+	default:
+		return fmt.Errorf("invalid proto %q: must be one of tcp, udp", flagProto)
+	}
 }
 
 func validateSortFlag() error {

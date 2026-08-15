@@ -25,8 +25,11 @@ const (
 	ProbeUnknown ProbeStatus = "unknown"
 	// ProbeChecking means a probe is currently in flight for the server.
 	ProbeChecking ProbeStatus = "checking"
-	// ProbeWorking means a real OpenVPN connection reached PUSH_REPLY (or
-	// an established peer session), so the server is actually usable.
+	// ProbeWorking means a real OpenVPN connection reached PUSH_REPLY (the
+	// server accepted the session and pushed its config), so the server is
+	// actually usable. A mere TLS "Peer Connection Initiated" is NOT enough
+	// because a full/maintenance relay still rejects credentials seconds
+	// later with AUTH_FAILED.
 	ProbeWorking ProbeStatus = "working"
 	// ProbeAuthFailed means the server accepted the connection but refused
 	// the OpenVPN credentials (typically a full or maintenance relay).
@@ -141,8 +144,10 @@ func reachableTCP(host string, port string, timeout time.Duration) bool {
 }
 
 // probeOpenVPN runs the real openvpn binary against the server's config and
-// reports working only when the handshake reaches PUSH_REPLY (or an
-// established peer session).
+// reports working only once the server actually pushes its config
+// (PUSH_REPLY / Initialization Sequence Completed). Reaching a TLS session
+// alone is not sufficient because a full relay can still reject with
+// AUTH_FAILED shortly afterward.
 func probeOpenVPN(ctx context.Context, server *Server, timeout time.Duration) ProbeResult {
 	config, err := base64.StdEncoding.DecodeString(server.OpenVpnConfigData)
 	if err != nil {
@@ -252,13 +257,20 @@ func scanProbeOutput(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.Reade
 			lastLine = line
 
 			switch {
-			case strings.Contains(line, "PUSH_REPLY"), strings.Contains(line, "Peer Connection Initiated"):
+			case strings.Contains(line, "PUSH_REPLY"), strings.Contains(line, "Initialization Sequence Completed"):
+				// The server accepted the session and pushed its config,
+				// so the relay is genuinely usable.
 				killAndReap()
 				return ProbeResult{Status: ProbeWorking, LatencyMs: int(time.Since(start).Milliseconds())}
 			case strings.Contains(line, "AUTH_FAILED"):
 				killAndReap()
 				return ProbeResult{Status: ProbeAuthFailed, LatencyMs: int(time.Since(start).Milliseconds())}
 			}
+			// "Peer Connection Initiated" is intentionally NOT treated as
+			// working: it only means the TLS session is up, and a
+			// full/maintenance relay still rejects credentials moments
+			// later with AUTH_FAILED. Keep scanning so such relays are
+			// reported as auth_failed (or timeout), never as working.
 		case <-ctx.Done():
 			// Kill and reap so no openvpn process is left behind, even
 			// when the parent is cancelled mid-probe.
