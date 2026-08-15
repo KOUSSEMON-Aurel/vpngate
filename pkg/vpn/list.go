@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -43,6 +44,23 @@ type Server struct {
 	OpenVpnConfigData string `csv:"OpenVPN_ConfigData_Base64"`
 	Ping              string `csv:"Ping"`
 	LatencyMs         int    `csv:"-" json:"latency_ms,omitempty"`
+	// Speed is the advertised relay bandwidth in bytes per second.
+	Speed int64 `csv:"Speed"`
+	// NumVpnSessions is the number of active VPN sessions on the relay.
+	NumVpnSessions int `csv:"NumVpnSessions"`
+	// Uptime is the relay's uptime in seconds.
+	Uptime int64 `csv:"Uptime"`
+	// TotalUsers is the cumulative number of users served by the relay.
+	TotalUsers int64 `csv:"TotalUsers"`
+	// TotalTraffic is the cumulative bytes carried by the relay.
+	TotalTraffic int64 `csv:"TotalTraffic"`
+	// LogType is how the relay operator logs sessions (e.g. "2weeks").
+	LogType string `csv:"LogType"`
+	// Operator is the volunteer running the relay, e.g. "Daiyuu Nobori_
+	// Japan. Academic Use Only.".
+	Operator string `csv:"Operator"`
+	// Message is an optional operator-supplied note about the relay.
+	Message string `csv:"Message"`
 }
 
 // Proto returns the tunnel transport ("tcp" or "udp") declared in the
@@ -72,6 +90,54 @@ func (s Server) Proto() string {
 	}
 
 	return ""
+}
+
+// SpeedLabel returns the relay's advertised speed as a short human-readable
+// string (e.g. "279.8 MB/s"), or "" when the value is missing.
+func (s Server) SpeedLabel() string {
+	if s.Speed <= 0 {
+		return ""
+	}
+	return humanBytes(s.Speed)
+}
+
+// UptimeLabel returns the relay's uptime as a short human-readable string
+// (e.g. "2d 4h"), or "" when the value is missing.
+func (s Server) UptimeLabel() string {
+	if s.Uptime <= 0 {
+		return ""
+	}
+	days := s.Uptime / (24 * 3600)
+	hours := (s.Uptime % (24 * 3600)) / 3600
+	if days > 0 {
+		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+	return fmt.Sprintf("%dh", hours)
+}
+
+// TrafficLabel returns the relay's cumulative traffic as a short
+// human-readable string (e.g. "593.7 TB"), or "" when the value is missing.
+func (s Server) TrafficLabel() string {
+	if s.TotalTraffic <= 0 {
+		return ""
+	}
+	return humanBytes(s.TotalTraffic)
+}
+
+// humanBytes renders a byte count using binary-ish units (KB, MB, GB, TB).
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<40:
+		return fmt.Sprintf("%.1f TB", float64(n)/(1<<40))
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 // parseVpnList parses the VPN server list from CSV format

@@ -76,7 +76,7 @@ var listCmd = &cobra.Command{
 		if flagHealthCheck {
 			table.Header([]string{"#", "HostName", "Country", "Proto", "Ping", "Status", "Latency", "Score"})
 		} else {
-			table.Header([]string{"#", "HostName", "Country", "Proto", "Ping", "Score"})
+			table.Header([]string{"#", "HostName", "Country", "Proto", "Ping", "Score", "Speed", "Sessions", "Operator"})
 		}
 
 		for i, v := range *vpnServers {
@@ -87,7 +87,7 @@ var listCmd = &cobra.Command{
 					return err
 				}
 			} else {
-				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Proto(), v.Ping, strconv.Itoa(v.Score)}); err != nil {
+				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Proto(), v.Ping, strconv.Itoa(v.Score), v.SpeedLabel(), strconv.Itoa(v.NumVpnSessions), truncateOperator(v.Operator)}); err != nil {
 					return err
 				}
 			}

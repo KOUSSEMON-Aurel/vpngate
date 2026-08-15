@@ -282,14 +282,14 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 	if gv == nil {
 		t.Fatal("globeView() returned nil at 140x24")
 	}
-	// 14 rows -> radius 8 -> disc 2*8+3 = 19 columns; the list body is capped
+	// 12 rows -> radius 7 -> disc 2*7+3 = 17 columns; the list body is capped
 	// at its natural 90 columns, so the globe column is 140-90-1 = 49 with
 	// the disc centred inside it.
 	if gv.width != 49 {
 		t.Errorf("globeView width = %d, want 49", gv.width)
 	}
-	if len(gv.lines) != 19 {
-		t.Errorf("globeView has %d lines, want 19", len(gv.lines))
+	if len(gv.lines) != 17 {
+		t.Errorf("globeView has %d lines, want 17", len(gv.lines))
 	}
 
 	// Japan sits behind the globe at rotation 0, so the pin must not be
@@ -316,12 +316,13 @@ func TestGlobeRendersWithinColumnAndPinsMarker(t *testing.T) {
 	if vis {
 		t.Fatalf("Japan must be behind the globe at rotation 0, got visible (u=%f v=%f)", u, v)
 	}
-	rx, ry := rimCell(u, v, 8)
+	rx, ry := rimCell(u, v, 7)
 	if rx*rx+ry*ry > 64 || math.Abs(math.Atan2(float64(ry), float64(rx))-math.Atan2(v, u)) > 8*math.Pi/180 {
 		t.Errorf("rimCell(%f,%f) = (%d,%d) not on the rim along the azimuth", u, v, rx, ry)
 	}
-	wantCol := 15 + 1 + rx + 8 // leftPad + disc offset + i
-	wantRow := 1 + ry + 8      // title line + j + r
+	leftPad := (gv.width - len(gv.lines[1])) / 2
+	wantCol := leftPad + 1 + rx + 7 // leftPad + disc offset + i
+	wantRow := 1 + ry + 7           // title line + j + r
 	if l := gv.lines[wantRow]; !strings.Contains(l, "•") {
 		t.Errorf("rim marker at row %d col %d missing in line %q", wantRow, wantCol, l)
 	}
@@ -484,7 +485,7 @@ func TestViewShowsRelayCountryFallbackWhileConnected(t *testing.T) {
 func TestGlobeGrowsWithTerminal(t *testing.T) {
 	big := &model{
 		width:   200,
-		height:  36, // rows 26 -> radius 14 -> disc 31
+		height:  36, // rows 24 -> radius 13 -> disc 29
 		servers: []vpn.Server{testServer("a")},
 		results: map[string]vpn.ProbeResult{"a": {Status: vpn.ProbeWorking, LatencyMs: 42}},
 	}
@@ -497,8 +498,8 @@ func TestGlobeGrowsWithTerminal(t *testing.T) {
 	if gv.width != 109 {
 		t.Errorf("globeView width = %d, want 109 at 200x36", gv.width)
 	}
-	if len(gv.lines) != 31 { // body height at 36 rows
-		t.Errorf("globeView has %d lines, want 31 at 200x36", len(gv.lines))
+	if len(gv.lines) != 29 { // body height at 36 rows
+		t.Errorf("globeView has %d lines, want 29 at 200x36", len(gv.lines))
 	}
 
 	reallyBig := &model{
@@ -521,8 +522,8 @@ func TestGlobeGrowsWithTerminal(t *testing.T) {
 	}
 	if gv := narrow.globeView(); gv == nil {
 		t.Error("globeView() nil at 70x24, radius should still fit")
-	} else if gv.width != 19 {
-		t.Errorf("globeView width = %d, want 19 at 70x24", gv.width)
+	} else if gv.width != 17 {
+		t.Errorf("globeView width = %d, want 17 at 70x24", gv.width)
 	}
 }
 

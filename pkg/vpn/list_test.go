@@ -78,6 +78,15 @@ func TestParseVpnList(t *testing.T) {
 	assert.Equal(t, (*servers)[0].Ping, "13")
 	assert.Equal(t, (*servers)[0].Score, 2086924)
 
+	assert.Equal(t, int64(3399364), (*servers)[0].Speed)
+	assert.Equal(t, 568, (*servers)[0].NumVpnSessions)
+	assert.Equal(t, int64(23293814598), (*servers)[0].Uptime)
+	assert.Equal(t, int64(3088324), (*servers)[0].TotalUsers)
+	assert.Equal(t, int64(109318687634581), (*servers)[0].TotalTraffic)
+	assert.Equal(t, "2weeks", (*servers)[0].LogType)
+	assert.Equal(t, "Daiyuu Nobori_ Japan. Academic Use Only.", (*servers)[0].Operator)
+	assert.Equal(t, "", (*servers)[0].Message)
+
 	for _, s := range *servers {
 		assert.NotEqual(t, "Korea Republic of", s.CountryLong, "CountryLong should be aliased to South Korea")
 	}

@@ -175,7 +175,7 @@ func frameChrome(fl frameLayout) int {
 		n++
 	}
 	if fl.detail {
-		n += 3
+		n += 5
 	}
 	if fl.footer {
 		n++
@@ -463,6 +463,16 @@ func (m *model) detailPane(w int) string {
 	b.WriteString(truncate(line2, w) + "\n")
 	line3 := "   verdict  " + info.style.Render(verdict)
 	b.WriteString(truncate(line3, w) + "\n")
+	speed := s.SpeedLabel()
+	if speed == "" {
+		speed = "-"
+	}
+	relay := fmt.Sprintf("   speed %-10s  sessions %-6d  uptime %-12s", speed, s.NumVpnSessions, s.UptimeLabel())
+	b.WriteString(truncate(relay, w) + "\n")
+	if s.Operator != "" {
+		op := "   operator " + truncate(s.Operator, w-12)
+		b.WriteString(truncate(op, w) + "\n")
+	}
 	return b.String()
 }
 

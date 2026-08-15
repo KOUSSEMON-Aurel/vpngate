@@ -102,17 +102,27 @@ func writeServersCSV(servers *[]vpn.Server) error {
 	writer := csv.NewWriter(os.Stdout)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Ping", "Score"}); err != nil {
+	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
 		return err
 	}
 
 	for _, server := range *servers {
-		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), server.Ping, strconv.Itoa(server.Score)}); err != nil {
+		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), server.Ping, strconv.Itoa(server.Score), server.SpeedLabel(), strconv.Itoa(server.NumVpnSessions), server.UptimeLabel(), server.Operator}); err != nil {
 			return err
 		}
 	}
 
 	return writer.Error()
+}
+
+// truncateOperator shortens a relay operator name for the list table so
+// long volunteer names (e.g. "Daiyuu Nobori_ Japan. Academic Use Only.")
+// do not widen every row.
+func truncateOperator(s string) string {
+	if len(s) <= 24 {
+		return s
+	}
+	return s[:23] + "…"
 }
 
 func validateProtoFlag() error {

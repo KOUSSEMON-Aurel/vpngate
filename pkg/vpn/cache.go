@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-const serverCachefile = "servers.json"
+// serverCachefile is versioned so caches written by an older schema (which
+// parse as JSON but lack newer fields) are automatically invalidated when the
+// Server struct changes. Bump the suffix when adding or removing struct fields.
+const serverCachefile = "servers.v2.json"
 
 // CacheDir returns the directory used for vpngate cache files.
 func CacheDir() (string, error) {
