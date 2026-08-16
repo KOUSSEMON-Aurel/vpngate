@@ -21,6 +21,17 @@ curl ipinfo.io
 
 ## Installation
 
+### Script d'installation (Linux et macOS)
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/KOUSSEMON-Aurel/vpngate/main/install.sh | bash
+```
+
+Le script installe le binaire (release GitHub, sinon `go install`), puis les
+dépendances détectées par le gestionnaire de paquets (apt, dnf, pacman, brew) :
+`openvpn`, `wireguard-tools`, et `wgcf` quand Go est disponible. Il ne fait
+jamais échouer l'installation si une dépendance optionnelle manque.
+
 ### Homebrew (macOS et Linux)
 
 ```shell
@@ -102,6 +113,21 @@ sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
 > sudo systemctl restart polkit
 > ```
 
+### Se connecter à Cloudflare WARP
+
+```shell
+sudo vpngate warp
+```
+
+WARP utilise **wgcf** (enregistrement de compte + profil WireGuard, amené
+avec `wg-quick`) quand il est installé, sinon **warp-cli** en repli.
+
+- Avec le backend wgcf : `wgcf` et `wg-quick` doivent être installés ; le
+  profil est créé automatiquement dans `~/.config/wgcf/wgcf-profile.conf`
+  (chemin surchargeable avec `--wgcf-config`). Nécessite `sudo` (interface tun).
+- Avec le backend warp-cli : `warp-cli` doit être connecté au préalable
+  (`warp-cli register --accept-tos && warp-cli connect`).
+
 ### Lister
 
 ```shell
@@ -113,6 +139,10 @@ vpngate list --country Japan --sort ping
 
 # serveurs US à fort score en JSON
 vpngate list --country us --min-score 1000000 --output json
+
+# uniquement les serveurs d'une source donnée (vpngate, vpnbook, freevpn, warp)
+vpngate list --source warp
+vpngate list --source freevpn
 
 # table simple, un seul passage de vérification, pas de TUI
 vpngate list --tui=false --watch=false --health-check
@@ -187,7 +217,11 @@ Comportement configurable (sondes toutes les 10 s, grâce de 30 s, seuil de 5 é
 
 ## Idées futures (TODO)
 
-- **`container-as-gateway` + kill switch** : router tout le trafic de la machine via un conteneur OpenVPN (passerelle par défaut = conteneur), avec règles nftables/iptables bloquant toute sortie hors du tunnel (`DROP` sauf via `tun0`), IPv6 bloqué et DNS forcé dans le tunnel → **zéro fuite** (IP et DNS) même si le tunnel tombe. Docker seul en `--network host` n'isole ni ne reroute rien : il partage le réseau de l'hôte.
+- [x] **WARP comme source dans le TUI** : Cloudflare WARP (`Source: warp`) est fusionné dans la liste. WARP n'a pas de relais communautaire à vérifier : son probe est un simple marqueur « working » sans latence mesurée, il trie donc *en dernier* dans les tris par ping (et derrière tous les relais mesurés dans `--best` et les reconnexions), tout en restant connectable explicitement (`connect warp`). Connecté via `wg-quick` (wgcf, création du profil automatique) ou `warp-cli` si disponible.
+- [x] **Provider freevpn.me** : scraper `https://freevpn.me/accounts/` pour les identifiants (comme vpnbook), intégrer `server1.freevpn.me` dans la liste fusionnée avec `Source: freevpn` et `--auth-user-pass`.
+- [x] **Installeur one-liner** : `curl -fsSL https://raw.githubusercontent.com/KOUSSEMON-Aurel/vpngate/main/install.sh | bash` installant openvpn, wireguard-tools, wgcf (et éventuellement warp-cli), puis le binaire vpngate.
+- [ ] **vpnbook multi-transport** : exposer les transports vpnbook `tcp443`/`tcp80`/`udp53`/`udp25000` (aujourd'hui un seul profil `tcp443` par serveur pour qu'il n'apparaisse qu'une fois dans la liste).
+- [ ] **`container-as-gateway` + kill switch** : router tout le trafic de la machine via un conteneur OpenVPN (passerelle par défaut = conteneur), avec règles nftables/iptables bloquant toute sortie hors du tunnel (`DROP` sauf via `tun0`), IPv6 bloqué et DNS forcé dans le tunnel → **zéro fuite** (IP et DNS) même si le tunnel tombe. Docker seul en `--network host` n'isole ni ne reroute rien : il partage le réseau de l'hôte.
 
 ## Notes
 

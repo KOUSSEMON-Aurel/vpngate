@@ -91,7 +91,7 @@ func (m *model) better(a, b vpn.Server) bool {
 			return ka < kb
 		}
 		if ka == 0 {
-			return ra.LatencyMs < rb.LatencyMs
+			return vpn.LatencyRank(ra.LatencyMs) < vpn.LatencyRank(rb.LatencyMs)
 		}
 		return a.HostName < b.HostName
 	}

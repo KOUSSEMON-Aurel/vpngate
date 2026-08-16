@@ -38,7 +38,7 @@ func workingServers(servers []vpn.Server, results map[string]vpn.ProbeResult) []
 	}
 
 	sort.SliceStable(working, func(i, j int) bool {
-		return results[working[i].HostName].LatencyMs < results[working[j].HostName].LatencyMs
+		return vpn.LatencyRank(results[working[i].HostName].LatencyMs) < vpn.LatencyRank(results[working[j].HostName].LatencyMs)
 	})
 	return working
 }

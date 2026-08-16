@@ -48,6 +48,9 @@ type Client interface {
 // ClientFor returns the Client used to connect to server, selected by its
 // Source. Unknown sources fall back to OpenVPN.
 func ClientFor(server Server) Client {
+	if server.Source == SourceWarp {
+		return warpClient{}
+	}
 	return openVPNClient{}
 }
 
@@ -102,19 +105,33 @@ func (openVPNClient) ConnectDetached(server Server, configPath, managementAddr s
 	return cmd, nil
 }
 
-// openvpnArgs builds the openvpn argv for server. vpnbook configs carry a
-// bare "auth-user-pass" directive that would otherwise block on stdin, so
-// the shared credentials file is passed explicitly.
+// openvpnArgs builds the openvpn argv for server. Configs from providers
+// that use shared credentials carry a bare "auth-user-pass" directive that
+// would otherwise block on stdin, so the credentials file is passed
+// explicitly.
 func openvpnArgs(server Server, configPath string, verb int) ([]string, error) {
 	args := []string{"--verb", strconv.Itoa(verb), "--config", configPath, "--data-ciphers", "AES-128-CBC"}
-	if server.Source == SourceVpnbook {
-		credsFile, err := vpnbookCredsFileFor()
-		if err != nil {
-			return nil, err
-		}
+	credsFile, err := authUserPassFileFor(server.Source)
+	if err != nil {
+		return nil, err
+	}
+	if credsFile != "" {
 		args = append(args, "--auth-user-pass", credsFile)
 	}
 	return args, nil
+}
+
+// authUserPassFileFor returns the path of a two-line auth-user-pass file
+// for the provider that requires shared credentials (vpnbook, freevpn),
+// or "" when the source does not use one.
+func authUserPassFileFor(source string) (string, error) {
+	switch source {
+	case SourceVpnbook:
+		return vpnbookCredsFileFor()
+	case SourceFreevpn:
+		return freevpnCredsFileFor()
+	}
+	return "", nil
 }
 
 // vpnbookCredsFileFor returns the path of a two-line auth-user-pass file

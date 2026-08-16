@@ -466,7 +466,7 @@ func (m *model) detailPane(w int) string {
 		latency = fmt.Sprintf("%dms", r.LatencyMs)
 	}
 
-	verdict := m.verdict(r)
+	verdict := m.verdict(s, r)
 	status := info.style.Render(info.label)
 
 	var b strings.Builder
@@ -489,7 +489,12 @@ func (m *model) detailPane(w int) string {
 	return b.String()
 }
 
-func (m *model) verdict(r vpn.ProbeResult) string {
+func (m *model) verdict(s vpn.Server, r vpn.ProbeResult) string {
+	// WARP is never actually probed; its working status means the tunnel
+	// is available without any relay verification.
+	if s.Source == vpn.SourceWarp && r.Status == vpn.ProbeWorking {
+		return "Cloudflare WARP · no relay probe needed"
+	}
 	switch r.Status {
 	case vpn.ProbeWorking:
 		return "reachable · OpenVPN handshake OK"

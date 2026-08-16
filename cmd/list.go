@@ -21,7 +21,7 @@ func init() {
 	listCmd.Flags().IntVar(&flagMaxPing, "max-ping", 0, "filter out servers with ping higher than this value")
 	listCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
 	listCmd.Flags().StringVar(&flagProto, "proto", "", "filter by tunnel transport (tcp or udp)")
-	listCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate or vpnbook)")
+	listCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate, vpnbook, freevpn, or warp)")
 	listCmd.Flags().StringVar(&flagSort, "sort", "none", "sort by one of none, score, ping, country, hostname")
 	listCmd.Flags().StringVarP(&flagOutput, "output", "o", outputTable, "output format: table, json, csv")
 	listCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before listing")

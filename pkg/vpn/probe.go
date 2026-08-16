@@ -86,6 +86,12 @@ func ParseRemoteFromConfig(base64Data string) (host string, port string, ok bool
 // relays skip that check since dialing a UDP-only port over TCP would
 // always fail.
 func ProbeServer(ctx context.Context, server *Server, timeout time.Duration) ProbeResult {
+	// WARP has no relay to probe: it is working out of the box, and its
+	// zero latency keeps it sorting behind every measured relay.
+	if server.Source == SourceWarp {
+		return ProbeResult{Status: ProbeWorking}
+	}
+
 	host, port, ok := ParseRemoteFromConfig(server.OpenVpnConfigData)
 	if !ok {
 		host = server.IPAddr
@@ -187,14 +193,15 @@ func probeOpenVPN(ctx context.Context, server *Server, timeout time.Duration) Pr
 		"--verb", "3",
 	}
 
-	// vpnbook configs carry a bare "auth-user-pass" directive that would
-	// block on stdin waiting for credentials; pass the shared credentials
-	// file explicitly so the probe can complete.
-	if server.Source == SourceVpnbook {
-		credsFile, err := vpnbookCredsFileFor()
+	// Configs from providers that use shared credentials carry a bare
+	// "auth-user-pass" directive that would block on stdin waiting for
+	// credentials; pass the credentials file explicitly so the probe can
+	// complete.
+	if server.Source == SourceVpnbook || server.Source == SourceFreevpn {
+		credsFile, err := authUserPassFileFor(server.Source)
 		if err != nil {
 			_ = os.Remove(tmpfile.Name())
-			return ProbeResult{Status: ProbeError, Detail: "vpnbook credentials unavailable: " + err.Error()}
+			return ProbeResult{Status: ProbeError, Detail: server.Source + " credentials unavailable: " + err.Error()}
 		}
 		args = append(args, "--auth-user-pass", credsFile)
 	}
@@ -348,6 +355,17 @@ loop:
 	return results
 }
 
+// LatencyRank returns a server's latency sort key. Real measurements rank
+// by their value; a non-positive latency (a working server that is never
+// actually probed, e.g. WARP) ranks behind every measured value so it can
+// never beat a real relay in a latency sort.
+func LatencyRank(ms int) int {
+	if ms > 0 {
+		return ms
+	}
+	return int(^uint(0) >> 1)
+}
+
 // BestWorkingServer returns the working server with the lowest real
 // latency, or an error when none of the servers verified as working.
 func BestWorkingServer(servers []Server, results map[string]ProbeResult) (Server, error) {
@@ -360,9 +378,9 @@ func BestWorkingServer(servers []Server, results map[string]ProbeResult) (Server
 		if !ok || r.Status != ProbeWorking {
 			continue
 		}
-		if r.LatencyMs < bestLatency {
+		if latency := LatencyRank(r.LatencyMs); latency < bestLatency {
 			best = s
-			bestLatency = r.LatencyMs
+			bestLatency = latency
 			found = true
 		}
 	}

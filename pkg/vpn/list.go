@@ -33,6 +33,8 @@ const (
 	SourceVpngate = "vpngate"
 	// SourceVpnbook identifies servers advertised by vpnbook.com.
 	SourceVpnbook = "vpnbook"
+	// SourceFreevpn identifies servers advertised by freevpn.me.
+	SourceFreevpn = "freevpn"
 	// SourceWarp identifies the Cloudflare WARP tunnel.
 	SourceWarp = "warp"
 )
@@ -258,6 +260,10 @@ type ListOptions struct {
 	// DisableVpnbook opts out of merging vpnbook.com OpenVPN servers into
 	// the returned list. Merging is enabled by default.
 	DisableVpnbook bool
+
+	// DisableFreevpn opts out of merging freevpn.me OpenVPN servers into
+	// the returned list. Merging is enabled by default.
+	DisableFreevpn bool
 }
 
 // mergeVpnbookServers appends vpnbook.com servers to the vpngate list. It
@@ -272,6 +278,21 @@ func mergeVpnbookServers(client *http.Client, vpngateServers *[]Server) *[]Serve
 	merged := make([]Server, 0, len(*vpngateServers)+len(vpnbookServers))
 	merged = append(merged, (*vpngateServers)...)
 	merged = append(merged, vpnbookServers...)
+	return &merged
+}
+
+// mergeFreevpnServers appends freevpn.me servers to the list. It returns
+// nil on failure so the caller can keep working with the list it has.
+func mergeFreevpnServers(client *http.Client, servers *[]Server) *[]Server {
+	freevpnServers, err := FetchFreevpnServers(client)
+	if err != nil {
+		log.Warn().Msgf("Unable to fetch freevpn.me servers: %s", err)
+		return nil
+	}
+
+	merged := make([]Server, 0, len(*servers)+len(freevpnServers))
+	merged = append(merged, (*servers)...)
+	merged = append(merged, freevpnServers...)
 	return &merged
 }
 
@@ -334,6 +355,18 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 				servers = merged
 			}
 		}
+
+		// Merge freevpn.me servers into the list, unless opted out.
+		if !opts.DisableFreevpn {
+			if merged := mergeFreevpnServers(client, servers); merged != nil {
+				servers = merged
+			}
+		}
+
+		// Cloudflare WARP is always available: it needs no relay list, so
+		// it is appended last and stays reachable even when every relay
+		// fetch fails.
+		*servers = append(*servers, WarpServer())
 
 		// Cache the servers for future use, unless caching is disabled.
 		if !opts.NoCache {

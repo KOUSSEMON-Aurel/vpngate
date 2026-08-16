@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/davegallant/vpngate/pkg/vpn"
 )
 
 // writeFakeBin creates an executable stub named name inside dir so it can
@@ -20,8 +22,8 @@ func writeFakeBin(t *testing.T, dir, name string) {
 // warp-cli on PATH no WARP backend is selected.
 func TestDetectWarpBackendNone(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	backend, err := detectWarpBackend()
-	assert.Equal(t, warpBackendNone, backend)
+	backend, err := vpn.DetectWarpBackend()
+	assert.Equal(t, vpn.WarpBackendNone, backend)
 	assert.Error(t, err)
 }
 
@@ -33,8 +35,8 @@ func TestDetectWarpBackendWgcf(t *testing.T) {
 	writeFakeBin(t, bin, "wg-quick")
 	t.Setenv("PATH", bin)
 
-	backend, err := detectWarpBackend()
-	assert.Equal(t, warpBackendWgcf, backend)
+	backend, err := vpn.DetectWarpBackend()
+	assert.Equal(t, vpn.WarpBackendWgcf, backend)
 	assert.NoError(t, err)
 }
 
@@ -46,8 +48,8 @@ func TestDetectWarpBackendWgcfWithoutWgQuick(t *testing.T) {
 	writeFakeBin(t, bin, "wgcf")
 	t.Setenv("PATH", bin)
 
-	backend, err := detectWarpBackend()
-	assert.Equal(t, warpBackendNone, backend)
+	backend, err := vpn.DetectWarpBackend()
+	assert.Equal(t, vpn.WarpBackendNone, backend)
 	assert.Error(t, err)
 }
 
@@ -58,23 +60,20 @@ func TestDetectWarpBackendCli(t *testing.T) {
 	writeFakeBin(t, bin, "warp-cli")
 	t.Setenv("PATH", bin)
 
-	backend, err := detectWarpBackend()
-	assert.Equal(t, warpBackendCli, backend)
+	backend, err := vpn.DetectWarpBackend()
+	assert.Equal(t, vpn.WarpBackendCli, backend)
 	assert.NoError(t, err)
 }
 
-// TestWarpWgcfProfileFlag verifies --wgcf-config wins over the default
-// profile path.
-func TestWarpWgcfProfileFlag(t *testing.T) {
-	flagWgcfConfig = "/tmp/custom-wgcf.conf"
-	defer func() { flagWgcfConfig = "" }()
-
-	profile, err := warpWgcfProfile()
+// TestWarpWgcfProfileOverride verifies an explicit profile path wins over
+// the default.
+func TestWarpWgcfProfileOverride(t *testing.T) {
+	profile, err := vpn.WarpWgcfProfile("/tmp/custom-wgcf.conf")
 	assert.NoError(t, err)
 	assert.Equal(t, "/tmp/custom-wgcf.conf", profile)
 }
 
-// TestWarpWgcfEnsureProfileDefault verifies the default profile path lives under
+// TestWarpWgcfProfileDefault verifies the default profile path lives under
 // $XDG_CONFIG_HOME/wgcf on Linux.
 func TestWarpWgcfProfileDefault(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -83,25 +82,7 @@ func TestWarpWgcfProfileDefault(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 
-	profile, err := warpWgcfProfile()
+	profile, err := vpn.WarpWgcfProfile("")
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(configHome, "wgcf", "wgcf-profile.conf"), profile)
-}
-
-// TestWarpWgcfEnsureProfileAcceptTos verifies wgcf register is invoked
-// non-interactively with --accept-tos so first-run provisioning never
-// blocks on Cloudflare's ToS prompt.
-func TestWarpWgcfEnsureProfileAcceptTos(t *testing.T) {
-	bin := t.TempDir()
-	argsFile := filepath.Join(t.TempDir(), "wgcf-args")
-	script := "#!/bin/sh\necho \"$@\" >> " + argsFile + "\nexit 0\n"
-	assert.NoError(t, os.WriteFile(filepath.Join(bin, "wgcf"), []byte(script), 0o755))
-	t.Setenv("PATH", bin)
-
-	profileDir := t.TempDir()
-	assert.NoError(t, wgcfEnsureProfile(profileDir))
-
-	args, err := os.ReadFile(argsFile)
-	assert.NoError(t, err)
-	assert.Equal(t, "register --accept-tos\ngenerate\n", string(args))
 }

@@ -51,7 +51,7 @@ func init() {
 	connectCmd.Flags().IntVar(&flagMaxPing, "max-ping", 0, "filter out servers with ping higher than this value")
 	connectCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
 	connectCmd.Flags().StringVar(&flagProto, "proto", "", "filter by tunnel transport (tcp or udp)")
-	connectCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate or vpnbook)")
+	connectCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate, vpnbook, freevpn, or warp)")
 	connectCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before connecting")
 	connectCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
 	connectCmd.Flags().BoolVarP(&flagDaemon, "daemon", "d", false, "run the connection in the background; see 'vpngate status' and 'vpngate disconnect'")
@@ -648,7 +648,7 @@ func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[s
 	working := cands[1:]
 	sort.SliceStable(working, func(i, j int) bool {
 		ri, rj := results[working[i].HostName], results[working[j].HostName]
-		return ri.LatencyMs < rj.LatencyMs
+		return vpn.LatencyRank(ri.LatencyMs) < vpn.LatencyRank(rj.LatencyMs)
 	})
 
 	for _, s := range servers {
