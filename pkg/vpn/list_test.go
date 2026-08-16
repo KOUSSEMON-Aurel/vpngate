@@ -1,8 +1,6 @@
 package vpn
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
@@ -11,26 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
-
-// makeFreevpnBundle returns a minimal freevpn.me-style zip holding a single
-// tcp443 OpenVPN config.
-func makeFreevpnBundle(t *testing.T) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, err := zw.Create("FreeVPN.me - Server1-NL/Server1-TCP443.ovpn")
-	assert.NoError(t, err)
-	_, err = w.Write([]byte("client\nproto tcp\nremote server1.freevpn.me 443\nauth-user-pass\ndev tun\n"))
-	assert.NoError(t, err)
-	assert.NoError(t, zw.Close())
-	return buf.Bytes()
-}
-
-// freevpnPage returns a minimal freevpn.me accounts page carrying the
-// shared credentials.
-func freevpnPage() []byte {
-	return []byte("**Username:** freevpn.me\n**Password:** k2YbR6Ve2JBe\n")
-}
 
 func TestServerProto(t *testing.T) {
 	enc := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
@@ -63,6 +41,31 @@ func TestServerProto(t *testing.T) {
 	}
 }
 
+// TestServerProtocol verifies that the VPN protocol is derived from the
+// server source and embedded config, not from the tunnel transport.
+func TestServerProtocol(t *testing.T) {
+	enc := base64.StdEncoding.EncodeToString([]byte("client\nproto udp\nremote 1.2.3.4 1194"))
+
+	tests := []struct {
+		name string
+		s    Server
+		want string
+	}{
+		{"vpngate relay", Server{Source: SourceVpngate, OpenVpnConfigData: enc}, "openvpn"},
+		{"vpnbook relay", Server{Source: SourceVpnbook, OpenVpnConfigData: enc}, "openvpn"},
+		{"warp", Server{Source: SourceWarp}, "wireguard"},
+		{"unknown source with config", Server{OpenVpnConfigData: enc}, "openvpn"},
+		{"no config", Server{Source: SourceVpngate}, ""},
+		{"empty", Server{}, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.s.Protocol())
+		})
+	}
+}
+
 // TestGetListWithOptions fetches and parses a local fixture served over
 // HTTP, exercising the same code path as a real fetch without depending on
 // vpngate.net being reachable.
@@ -71,30 +74,19 @@ func TestGetListWithOptions(t *testing.T) {
 	assert.NoError(t, err)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/accounts":
-			_, _ = w.Write(freevpnPage())
-		case "/bundle.zip":
-			_, _ = w.Write(makeFreevpnBundle(t))
-		default:
-			_, _ = w.Write(dat)
-		}
+		_, _ = w.Write(dat)
 	}))
 	defer server.Close()
 
 	originalVpnList := vpnList
-	originalFreevpnBaseURL, originalFreevpnBundleURL := freevpnBaseURL, freevpnBundleURL
 	vpnList = server.URL + "/vpnlist"
-	freevpnBaseURL = server.URL + "/accounts"
-	freevpnBundleURL = server.URL + "/bundle.zip"
 	defer func() {
 		vpnList = originalVpnList
-		freevpnBaseURL, freevpnBundleURL = originalFreevpnBaseURL, originalFreevpnBundleURL
 	}()
 
 	servers, err := GetListWithOptions("", "", ListOptions{NoCache: true, DisableVpnbook: true})
 	assert.NoError(t, err)
-	assert.Equal(t, 100, len(*servers))
+	assert.Equal(t, 99, len(*servers))
 }
 
 // TestGetListWithOptionsMergesVpnbook verifies vpnbook servers are appended
@@ -109,10 +101,6 @@ func TestGetListWithOptionsMergesVpnbook(t *testing.T) {
 		switch r.URL.Path {
 		case "/vpnlist":
 			_, _ = w.Write(dat)
-		case "/accounts":
-			_, _ = w.Write(freevpnPage())
-		case "/bundle.zip":
-			_, _ = w.Write(makeFreevpnBundle(t))
 		default:
 			_, _ = w.Write(payload)
 		}
@@ -121,38 +109,31 @@ func TestGetListWithOptionsMergesVpnbook(t *testing.T) {
 
 	originalVpnList := vpnList
 	originalVpnbookBaseURL, originalVpnbookConfigURL := vpnbookBaseURL, vpnbookConfigURL
-	originalFreevpnBaseURL, originalFreevpnBundleURL := freevpnBaseURL, freevpnBundleURL
 	vpnList = server.URL + "/vpnlist"
 	vpnbookBaseURL = server.URL + "/page"
 	vpnbookConfigURL = server.URL + "/config"
-	freevpnBaseURL = server.URL + "/accounts"
-	freevpnBundleURL = server.URL + "/bundle.zip"
 	defer func() {
 		vpnList = originalVpnList
 		vpnbookBaseURL, vpnbookConfigURL = originalVpnbookBaseURL, originalVpnbookConfigURL
-		freevpnBaseURL, freevpnBundleURL = originalFreevpnBaseURL, originalFreevpnBundleURL
 	}()
 
 	servers, err := GetListWithOptions("", "", ListOptions{NoCache: true})
 	assert.NoError(t, err)
-	assert.Equal(t, 110, len(*servers))
+	assert.Equal(t, 109, len(*servers))
 
-	var vpngateCount, vpnbookCount, freevpnCount, warpCount int
+	var vpngateCount, vpnbookCount, warpCount int
 	for _, s := range *servers {
 		switch s.Source {
 		case SourceVpngate:
 			vpngateCount++
 		case SourceVpnbook:
 			vpnbookCount++
-		case SourceFreevpn:
-			freevpnCount++
 		case SourceWarp:
 			warpCount++
 		}
 	}
 	assert.Equal(t, 98, vpngateCount)
 	assert.Equal(t, 10, vpnbookCount)
-	assert.Equal(t, 1, freevpnCount)
 	assert.Equal(t, 1, warpCount)
 }
 
@@ -173,14 +154,11 @@ func TestGetListWithOptionsVpnbookFailureKeepsVpngate(t *testing.T) {
 
 	originalVpnList := vpnList
 	originalVpnbookBaseURL := vpnbookBaseURL
-	originalFreevpnBaseURL := freevpnBaseURL
 	vpnList = server.URL + "/vpnlist"
 	vpnbookBaseURL = server.URL + "/page"
-	freevpnBaseURL = server.URL + "/accounts"
 	defer func() {
 		vpnList = originalVpnList
 		vpnbookBaseURL = originalVpnbookBaseURL
-		freevpnBaseURL = originalFreevpnBaseURL
 	}()
 
 	servers, err := GetListWithOptions("", "", ListOptions{NoCache: true})

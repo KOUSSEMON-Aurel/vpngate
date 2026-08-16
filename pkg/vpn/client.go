@@ -122,14 +122,12 @@ func openvpnArgs(server Server, configPath string, verb int) ([]string, error) {
 }
 
 // authUserPassFileFor returns the path of a two-line auth-user-pass file
-// for the provider that requires shared credentials (vpnbook, freevpn),
+// for the provider that requires shared credentials (vpnbook),
 // or "" when the source does not use one.
 func authUserPassFileFor(source string) (string, error) {
 	switch source {
 	case SourceVpnbook:
 		return vpnbookCredsFileFor()
-	case SourceFreevpn:
-		return freevpnCredsFileFor()
 	}
 	return "", nil
 }

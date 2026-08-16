@@ -145,6 +145,9 @@ func (s *supervisor) run() error {
 // successful connection, records daemon state, and blocks until it
 // exits (either on its own or because handleStop signaled it).
 func (s *supervisor) connectOnce(server vpn.Server) error {
+	if server.Source == vpn.SourceWarp {
+		return errors.New("WARP does not support background (daemon) mode")
+	}
 	configData, err := vpn.ServerConfig(server)
 	if err != nil {
 		return err

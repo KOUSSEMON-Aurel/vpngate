@@ -33,8 +33,6 @@ const (
 	SourceVpngate = "vpngate"
 	// SourceVpnbook identifies servers advertised by vpnbook.com.
 	SourceVpnbook = "vpnbook"
-	// SourceFreevpn identifies servers advertised by freevpn.me.
-	SourceFreevpn = "freevpn"
 	// SourceWarp identifies the Cloudflare WARP tunnel.
 	SourceWarp = "warp"
 )
@@ -101,6 +99,21 @@ func (s Server) Proto() string {
 		}
 	}
 
+	return ""
+}
+
+// Protocol returns the VPN protocol a server connects with: "openvpn" for
+// relays carrying an embedded OpenVPN config (vpngate, vpnbook) and
+// "wireguard" for Cloudflare WARP. It returns "" when the protocol cannot be
+// determined. Distinct from Proto, which is the OpenVPN tunnel transport
+// (tcp or udp).
+func (s Server) Protocol() string {
+	if s.Source == SourceWarp {
+		return "wireguard"
+	}
+	if s.OpenVpnConfigData != "" {
+		return "openvpn"
+	}
 	return ""
 }
 
@@ -260,10 +273,6 @@ type ListOptions struct {
 	// DisableVpnbook opts out of merging vpnbook.com OpenVPN servers into
 	// the returned list. Merging is enabled by default.
 	DisableVpnbook bool
-
-	// DisableFreevpn opts out of merging freevpn.me OpenVPN servers into
-	// the returned list. Merging is enabled by default.
-	DisableFreevpn bool
 }
 
 // mergeVpnbookServers appends vpnbook.com servers to the vpngate list. It
@@ -278,21 +287,6 @@ func mergeVpnbookServers(client *http.Client, vpngateServers *[]Server) *[]Serve
 	merged := make([]Server, 0, len(*vpngateServers)+len(vpnbookServers))
 	merged = append(merged, (*vpngateServers)...)
 	merged = append(merged, vpnbookServers...)
-	return &merged
-}
-
-// mergeFreevpnServers appends freevpn.me servers to the list. It returns
-// nil on failure so the caller can keep working with the list it has.
-func mergeFreevpnServers(client *http.Client, servers *[]Server) *[]Server {
-	freevpnServers, err := FetchFreevpnServers(client)
-	if err != nil {
-		log.Warn().Msgf("Unable to fetch freevpn.me servers: %s", err)
-		return nil
-	}
-
-	merged := make([]Server, 0, len(*servers)+len(freevpnServers))
-	merged = append(merged, (*servers)...)
-	merged = append(merged, freevpnServers...)
 	return &merged
 }
 
@@ -352,13 +346,6 @@ func GetListWithOptions(httpProxy string, socks5Proxy string, opts ListOptions) 
 		// Merge vpnbook.com servers into the list, unless opted out.
 		if !opts.DisableVpnbook {
 			if merged := mergeVpnbookServers(client, servers); merged != nil {
-				servers = merged
-			}
-		}
-
-		// Merge freevpn.me servers into the list, unless opted out.
-		if !opts.DisableFreevpn {
-			if merged := mergeFreevpnServers(client, servers); merged != nil {
 				servers = merged
 			}
 		}

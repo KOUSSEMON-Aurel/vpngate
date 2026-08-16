@@ -23,7 +23,7 @@ vpngate list [flags]
       --refresh                   refresh the vpn server list cache before listing
   -s, --socks5 string             provide a socks5 proxy server to make requests through (i.e. 127.0.0.1:1080)
       --sort string               sort by one of none, score, ping, country, hostname (default "none")
-      --source string             filter by server source (vpngate, vpnbook, freevpn, or warp)
+      --source string             filter by server source (vpngate, vpnbook, or warp)
       --tui                       use the interactive TUI browser when on a terminal (default true)
       --watch                     keep re-verifying server health in the background (default true)
       --watch-interval duration   how often to re-verify servers in the background (default 30s)

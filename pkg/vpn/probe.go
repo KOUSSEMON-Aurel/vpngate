@@ -197,7 +197,7 @@ func probeOpenVPN(ctx context.Context, server *Server, timeout time.Duration) Pr
 	// "auth-user-pass" directive that would block on stdin waiting for
 	// credentials; pass the credentials file explicitly so the probe can
 	// complete.
-	if server.Source == SourceVpnbook || server.Source == SourceFreevpn {
+	if server.Source == SourceVpnbook {
 		credsFile, err := authUserPassFileFor(server.Source)
 		if err != nil {
 			_ = os.Remove(tmpfile.Name())

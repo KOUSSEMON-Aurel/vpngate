@@ -29,7 +29,7 @@ vpngate connect [flags]
   -t, --reconnect                 continually attempt to connect to the server
       --refresh                   refresh the vpn server list cache before connecting
   -s, --socks5 string             provide a socks5 proxy server to make requests through (i.e. 127.0.0.1:1080)
-      --source string             filter by server source (vpngate, vpnbook, freevpn, or warp)
+      --source string             filter by server source (vpngate, vpnbook, or warp)
       --tui                       use the interactive server picker instead of the plain survey (default true)
       --tunnel-health-check       verify the live tunnel keeps carrying traffic and reconnect when it stops (disable to never drop a connected tunnel) (default true)
       --watch                     keep re-verifying server health in the background (default true)
