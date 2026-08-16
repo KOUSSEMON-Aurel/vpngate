@@ -367,13 +367,36 @@ func sourceLabel(source string) string {
 	return source
 }
 
-// protocolLabel renders a server's supported VPN protocols for the list
-// column, falling back to a dash when none can be determined.
+// shortProtocol renders a VPN protocol identifier compactly so it fits the
+// width-constrained TUI columns (e.g. "l2tp/ipsec" as "l2tp").
+func shortProtocol(p string) string {
+	if p == vpn.ProtocolL2TPIPsec {
+		return "l2tp"
+	}
+	return p
+}
+
+// protocolLabel renders a server's primary VPN protocol for the list rows,
+// falling back to a dash when none can be determined.
 func protocolLabel(s vpn.Server) string {
-	if p := s.ProtocolLabel(); p != "" {
-		return p
+	if p := s.Protocol(); p != "" {
+		return shortProtocol(p)
 	}
 	return "-"
+}
+
+// protocolsLabel renders every protocol a server supports, compactly, for
+// the detail pane.
+func protocolsLabel(s vpn.Server) string {
+	ps := s.Protocols()
+	if len(ps) == 0 {
+		return "-"
+	}
+	short := make([]string, len(ps))
+	for i, p := range ps {
+		short[i] = shortProtocol(p)
+	}
+	return strings.Join(short, ", ")
 }
 
 // transportLabel renders a server's default OpenVPN transport for the
@@ -494,10 +517,12 @@ func (m *model) detailPane(w int) string {
 	var b strings.Builder
 	title := fmt.Sprintf(" %s %s %s %s", icon, s.HostName, flag, truncate(s.CountryLong, 12))
 	b.WriteString(styleHeader.Render(truncate(title, w)) + "\n")
-	line2 := fmt.Sprintf("   ip %-15s  protocol %-9s  transport %-7s  score %-8d  latency %s  provider %-8s  %s", truncate(s.IPAddr, 15), protocolLabel(s), transportLabel(s), s.Score, latency, sourceLabel(s.Source), status)
+	line2 := fmt.Sprintf("   ip %-15s  protocols %-19s  score %-8d", truncate(s.IPAddr, 15), truncate(protocolsLabel(s), 19), s.Score)
 	b.WriteString(truncate(line2, w) + "\n")
-	line3 := "   verdict  " + info.style.Render(verdict)
+	line3 := fmt.Sprintf("   transport %-7s  latency %-6s  provider %-8s  %s", transportLabel(s), latency, sourceLabel(s.Source), status)
 	b.WriteString(truncate(line3, w) + "\n")
+	line4 := "   verdict  " + info.style.Render(verdict)
+	b.WriteString(truncate(line4, w) + "\n")
 	speed := s.SpeedLabel()
 	if speed == "" {
 		speed = "-"
