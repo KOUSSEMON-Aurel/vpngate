@@ -48,10 +48,45 @@ type Client interface {
 // ClientFor returns the Client used to connect to server, selected by its
 // Source. Unknown sources fall back to OpenVPN.
 func ClientFor(server Server) Client {
-	if server.Source == SourceWarp {
-		return warpClient{}
+	c, _ := ClientForProtocol(server, "")
+	return c
+}
+
+// ClientForProtocol returns the Client used to connect to server with the
+// given VPN protocol. An empty protocol picks the server's primary one
+// (OpenVPN for servers whose protocol cannot be determined). It errors
+// when the protocol is unknown or not supported by the server's source
+// (e.g. vpnbook has no L2TP/IPsec relays; WARP is wireguard only).
+func ClientForProtocol(server Server, protocol string) (Client, error) {
+	if protocol == "" {
+		protocol = server.Protocol()
 	}
-	return openVPNClient{}
+	if protocol == "" {
+		protocol = ProtocolOpenVPN
+	}
+
+	switch server.Source {
+	case SourceWarp:
+		if protocol == ProtocolWireGuard {
+			return warpClient{}, nil
+		}
+		return nil, fmt.Errorf("WARP only supports the wireguard protocol, not %q", protocol)
+	case SourceVpnbook:
+		if protocol != ProtocolOpenVPN {
+			return nil, fmt.Errorf("%s relays only support the openvpn protocol, not %q", server.Source, protocol)
+		}
+		return openVPNClient{}, nil
+	}
+
+	switch protocol {
+	case ProtocolOpenVPN:
+		return openVPNClient{}, nil
+	case ProtocolL2TPIPsec:
+		return l2tpClient{}, nil
+	case ProtocolSSTP:
+		return sstpClient{}, nil
+	}
+	return nil, fmt.Errorf("unsupported protocol %q", protocol)
 }
 
 // openVPNClient tunnels through the openvpn binary.
@@ -110,7 +145,16 @@ func (openVPNClient) ConnectDetached(server Server, configPath, managementAddr s
 // would otherwise block on stdin, so the credentials file is passed
 // explicitly.
 func openvpnArgs(server Server, configPath string, verb int) ([]string, error) {
-	args := []string{"--verb", strconv.Itoa(verb), "--config", configPath, "--data-ciphers", "AES-128-CBC"}
+	args := []string{"--verb", strconv.Itoa(verb), "--config", configPath}
+	if !configDeclaresDataCiphers(server) {
+		// Legacy relay configs (vpngate) only carry a "cipher" directive,
+		// which OpenVPN 2.6 does not negotiate, so the classic cipher is
+		// forced for them. Providers whose configs declare data-ciphers
+		// (vpnbook) negotiate their own list instead: overriding it here
+		// would break the handshake when the relay does not offer the
+		// forced cipher.
+		args = append(args, "--data-ciphers", "AES-128-CBC")
+	}
 	credsFile, err := authUserPassFileFor(server.Source)
 	if err != nil {
 		return nil, err
@@ -119,6 +163,23 @@ func openvpnArgs(server Server, configPath string, verb int) ([]string, error) {
 		args = append(args, "--auth-user-pass", credsFile)
 	}
 	return args, nil
+}
+
+// configDeclaresDataCiphers reports whether the server's embedded OpenVPN
+// config carries an active data-ciphers directive, i.e. the provider
+// already controls cipher negotiation and the client must not override it.
+func configDeclaresDataCiphers(server Server) bool {
+	config, err := base64.StdEncoding.DecodeString(server.OpenVpnConfigData)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(config), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "data-ciphers" {
+			return true
+		}
+	}
+	return false
 }
 
 // authUserPassFileFor returns the path of a two-line auth-user-pass file
@@ -149,12 +210,17 @@ func defaultHTTPClient() *http.Client {
 	return &http.Client{Timeout: httpClientTimeout}
 }
 
-// ServerConfig decodes the server's embedded OpenVPN config, appending a
-// directive that folds IPv6 into the tunnel when the host has a default
-// IPv6 route. vpngate relays are IPv4-only: on such a host browsers would
-// otherwise bypass the tunnel over IPv6 and reveal the real location; on
-// IPv6-less hosts (where no leak is possible) the directive is skipped so
-// openvpn does not warn about an IPv6 route it cannot apply.
+// ServerConfig decodes the server's embedded OpenVPN config and appends
+// directives the client needs on top of it:
+//
+//   - a TCP MSS cap, because community relays (vpngate, vpnbook) ship
+//     configs without mssfix and silently drop the oversized packets their
+//     tunnels produce, so TCP dies while ICMP still passes;
+//   - an IPv6 black hole when the host has a default IPv6 route. vpngate
+//     relays are IPv4-only: on such a host browsers would otherwise bypass
+//     the tunnel over IPv6 and reveal the real location; on IPv6-less hosts
+//     (where no leak is possible) the directive is skipped so openvpn does
+//     not warn about an IPv6 route it cannot apply.
 func ServerConfig(server Server) ([]byte, error) {
 	if server.OpenVpnConfigData == "" {
 		return nil, errors.New("server has no embedded OpenVPN config")
@@ -163,10 +229,11 @@ func ServerConfig(server Server) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	out := append(decoded, []byte("\n# vpngate: cap the TCP MSS so oversized segments fit through the community relays (their tunnels drop packets that exceed the path MTU)\nmssfix 1350\n")...)
 	if !HostRoutesIPv6() {
-		return decoded, nil
+		return out, nil
 	}
-	return append(decoded, []byte("\n# vpngate: force all IPv6 into the tunnel (relays are IPv4-only)\nroute-ipv6 ::/0\n")...), nil
+	return append(out, []byte("# vpngate: force all IPv6 into the tunnel (relays are IPv4-only)\nroute-ipv6 ::/0\n")...), nil
 }
 
 // WriteServerConfig writes ServerConfig to a temporary file and returns its

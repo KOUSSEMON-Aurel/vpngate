@@ -55,13 +55,92 @@ func TestServerProtocol(t *testing.T) {
 		{"vpnbook relay", Server{Source: SourceVpnbook, OpenVpnConfigData: enc}, "openvpn"},
 		{"warp", Server{Source: SourceWarp}, "wireguard"},
 		{"unknown source with config", Server{OpenVpnConfigData: enc}, "openvpn"},
-		{"no config", Server{Source: SourceVpngate}, ""},
+		{"vpngate without config", Server{Source: SourceVpngate}, "openvpn"},
 		{"empty", Server{}, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, tt.s.Protocol())
+		})
+	}
+}
+
+// TestServerProtocols verifies that every protocol a server can be
+// connected with is exposed: VPN Gate relays advertise OpenVPN, L2TP/IPsec
+// and MS-SSTP for every relay (the three protocols are part of the VPN
+// Gate software itself, and L2TP/SSTP use shared credentials), while
+// vpnbook is OpenVPN-only and WARP is wireguard-only.
+func TestServerProtocols(t *testing.T) {
+	enc := base64.StdEncoding.EncodeToString([]byte("client\nproto udp\nremote 1.2.3.4 1194"))
+
+	tests := []struct {
+		name string
+		s    Server
+		want []string
+	}{
+		{"vpngate relay", Server{Source: SourceVpngate, OpenVpnConfigData: enc}, []string{ProtocolOpenVPN, ProtocolL2TPIPsec, ProtocolSSTP}},
+		{"vpngate without config", Server{Source: SourceVpngate}, []string{ProtocolOpenVPN, ProtocolL2TPIPsec, ProtocolSSTP}},
+		{"vpnbook relay", Server{Source: SourceVpnbook, OpenVpnConfigData: enc}, []string{ProtocolOpenVPN}},
+		{"warp", Server{Source: SourceWarp}, []string{ProtocolWireGuard}},
+		{"unknown source with config", Server{OpenVpnConfigData: enc}, []string{ProtocolOpenVPN}},
+		{"empty", Server{}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.s.Protocols())
+		})
+	}
+}
+
+// TestServerTransportLabel verifies the default OpenVPN transport shown
+// for a server: the embedded default for vpnbook, the config proto for
+// sources with a fixed transport, and "" when it cannot be determined.
+func TestServerTransportLabel(t *testing.T) {
+	enc := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
+	tests := []struct {
+		name string
+		s    Server
+		want string
+	}{
+		{"vpnbook default", Server{Source: SourceVpnbook}, TransportTCP443},
+		{"vpnbook embedded transport", Server{Source: SourceVpnbook, Transport: "udp53"}, "udp53"},
+		{"vpngate tcp config", Server{Source: SourceVpngate, OpenVpnConfigData: enc("client\nproto tcp\nremote 1.2.3.4 443")}, "tcp"},
+		{"vpngate udp config", Server{Source: SourceVpngate, OpenVpnConfigData: enc("client\nproto udp\nremote 1.2.3.4 1194")}, "udp"},
+		{"vpngate without config", Server{Source: SourceVpngate}, ""},
+		{"warp", Server{Source: SourceWarp}, ""},
+		{"empty", Server{}, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.s.TransportLabel())
+		})
+	}
+}
+
+// TestServerTransports verifies that only vpnbook servers expose a
+// selectable set of transports; every other source is reached the way
+// its config declares.
+func TestServerTransports(t *testing.T) {
+	enc := base64.StdEncoding.EncodeToString([]byte("client\nproto udp\nremote 1.2.3.4 1194"))
+
+	tests := []struct {
+		name string
+		s    Server
+		want []string
+	}{
+		{"vpnbook relay", Server{Source: SourceVpnbook, OpenVpnConfigData: enc}, VpnbookTransports()},
+		{"vpngate relay", Server{Source: SourceVpngate, OpenVpnConfigData: enc}, nil},
+		{"warp", Server{Source: SourceWarp}, nil},
+		{"empty", Server{}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.s.Transports())
 		})
 	}
 }

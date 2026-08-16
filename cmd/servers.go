@@ -107,12 +107,12 @@ func writeServersCSV(servers *[]vpn.Server) error {
 	writer := csv.NewWriter(os.Stdout)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Provider", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
+	if err := writer.Write([]string{"HostName", "CountryLong", "CountryShort", "IP", "Proto", "Transport", "Provider", "Ping", "Score", "Speed", "Sessions", "Uptime", "Operator"}); err != nil {
 		return err
 	}
 
 	for _, server := range *servers {
-		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), sourceLabel(server), server.Ping, strconv.Itoa(server.Score), server.SpeedLabel(), strconv.Itoa(server.NumVpnSessions), server.UptimeLabel(), server.Operator}); err != nil {
+		if err := writer.Write([]string{server.HostName, server.CountryLong, server.CountryShort, server.IPAddr, server.Proto(), transportLabel(server), sourceLabel(server), server.Ping, strconv.Itoa(server.Score), server.SpeedLabel(), strconv.Itoa(server.NumVpnSessions), server.UptimeLabel(), server.Operator}); err != nil {
 			return err
 		}
 	}
@@ -137,6 +137,15 @@ func sourceLabel(s vpn.Server) string {
 		return "-"
 	}
 	return s.Source
+}
+
+// transportLabel renders a server's default OpenVPN transport for table
+// output, falling back to a dash when none can be determined.
+func transportLabel(s vpn.Server) string {
+	if t := s.TransportLabel(); t != "" {
+		return t
+	}
+	return "-"
 }
 
 func validateProtoFlag() error {

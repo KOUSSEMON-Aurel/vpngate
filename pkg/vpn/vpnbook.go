@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,11 +20,17 @@ import (
 	"github.com/juju/errors"
 )
 
+// vpnbook OpenVPN transports. vpnbook serves the same server over several
+// tunnels so an ISP that throttles one port is not a hard failure; the
+// default profile kept in the merged list is tcp443.
 const (
-	// vpnbookConfigProtocol is the single OpenVPN profile we keep per server
-	// so each server appears once in the merged list.
-	vpnbookConfigProtocol = "tcp443"
+	TransportTCP443   = "tcp443"
+	TransportTCP80    = "tcp80"
+	TransportUDP53    = "udp53"
+	TransportUDP25000 = "udp25000"
+)
 
+const (
 	// vpnbookFetchConcurrency bounds the number of in-flight config fetches.
 	vpnbookFetchConcurrency = 4
 
@@ -104,7 +111,7 @@ func FetchVpnbookServers(client *http.Client) ([]Server, error) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			config, err := fetchVpnbookConfig(client, flightServer.Hostname)
+			config, err := fetchVpnbookConfig(client, flightServer.Hostname, TransportTCP443)
 			if err != nil {
 				log.Warn().Msgf("vpnbook: %s: %s", flightServer.ID, err)
 				return
@@ -216,10 +223,10 @@ func fetchVpnbookPayload(client *http.Client) ([]byte, error) {
 	return payload, nil
 }
 
-func fetchVpnbookConfig(client *http.Client, hostname string) ([]byte, error) {
+func fetchVpnbookConfig(client *http.Client, hostname string, transport string) ([]byte, error) {
 	params := url.Values{}
 	params.Set("hostname", hostname)
-	params.Set("protocol", vpnbookConfigProtocol)
+	params.Set("protocol", transport)
 	configURL := fmt.Sprintf("%s?%s", vpnbookConfigURL, params.Encode())
 
 	var lastErr error
@@ -246,6 +253,69 @@ func fetchVpnbookConfig(client *http.Client, hostname string) ([]byte, error) {
 		return body, nil
 	}
 	return nil, lastErr
+}
+
+// VpnbookTransports lists the OpenVPN transports vpnbook serves each
+// server over, in the order they are offered to the user.
+func VpnbookTransports() []string {
+	return []string{TransportTCP443, TransportTCP80, TransportUDP53, TransportUDP25000}
+}
+
+// ValidVpnbookTransport reports whether t is one of the vpnbook OpenVPN
+// transports.
+func ValidVpnbookTransport(t string) bool {
+	for _, candidate := range VpnbookTransports() {
+		if t == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+// vpnbookConfigHostname extracts the hostname from the first remote
+// directive of a vpnbook OpenVPN config. vpnbook configs always carry a
+// `remote <fqdn> <port> <proto>` line naming the host whose per-transport
+// config should be fetched.
+func vpnbookConfigHostname(config []byte) string {
+	for _, line := range strings.Split(string(config), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "remote" {
+			return fields[1]
+		}
+	}
+	return ""
+}
+
+// ServerWithVpnbookTransport returns a copy of s whose embedded OpenVPN
+// config was fetched for the given transport (tcp443, tcp80, udp53 or
+// udp25000). The hostname is read from the embedded config's remote line,
+// so the caller does not need to know it. It errors when the transport is
+// unknown, the embedded config carries no remote directive, or the fetch
+// fails.
+func ServerWithVpnbookTransport(s Server, transport string) (Server, error) {
+	transport = strings.ToLower(transport)
+	if !ValidVpnbookTransport(transport) {
+		return s, errors.Errorf("vpnbook: unsupported transport %q (supported: %s)", transport, strings.Join(VpnbookTransports(), ", "))
+	}
+
+	config, err := base64.StdEncoding.DecodeString(s.OpenVpnConfigData)
+	if err != nil {
+		return s, errors.Annotate(err, "vpnbook: unable to decode embedded config")
+	}
+
+	hostname := vpnbookConfigHostname(config)
+	if hostname == "" {
+		return s, errors.New("vpnbook: unable to determine the config hostname from the embedded config")
+	}
+
+	fetched, err := fetchVpnbookConfig(defaultHTTPClient(), hostname, transport)
+	if err != nil {
+		return s, errors.Annotatef(err, "vpnbook: unable to fetch %s config for %s", transport, hostname)
+	}
+
+	s.OpenVpnConfigData = base64.StdEncoding.EncodeToString(fetched)
+	s.Transport = transport
+	return s, nil
 }
 
 func parseVpnbookServers(payload []byte) ([]vpnbookFlightServer, error) {

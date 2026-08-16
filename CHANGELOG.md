@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+- Add vpnbook multi-transport: `connect --transport` selects one of the four vpnbook transports (`tcp443`, `tcp80`, `udp53`, `udp25000`) and fetches the matching OpenVPN config at connect time, `list` gains a Transport column (also in CSV/JSON and the TUI detail pane), and the daemon forwards the flag. Servers keep their embedded `tcp443` profile by default.
+- Add L2TP/IPsec and MS-SSTP protocols for vpngate relays: `connect --protocol l2tp/ipsec` (strongSwan + xl2tpd, `vpn`/`vpn`) and `connect --protocol sstp` (sstp-client, `sstp://ip:443`), with the corresponding relay servers kept filterable by protocol. Relay addresses come from the CSV, no HTML scraping.
+- Fix OpenVPN connects failing with `AUTH_FAILED` on providers whose configs declare their own `data-ciphers` (vpnbook): the forced `--data-ciphers AES-128-CBC` override is now only applied to legacy configs without a `data-ciphers` directive.
+- Fix dead TCP egress through community relays: generated configs now cap the TCP MSS (`mssfix 1350`) because the relays silently drop the oversized packets their tunnels produce (ICMP and TCP handshakes worked, data transfers stalled).
+- Remove the freevpn.me provider: its single upstream server no longer accepts connections.
 - Add Cloudflare WARP as a first-class source: `vpngate warp` connects through wgcf (automatic account registration and WireGuard profile) or the warp-cli fallback, and the `warp` source appears in `list`/`connect` with a "working" probe marker (no relay to verify) so it sorts last in latency-based orders while remaining connectable explicitly.
-- Add the freevpn.me provider: credentials are scraped from the freevpn.me accounts page (like vpnbook) and the single `server1.freevpn.me` OpenVPN server (tcp443) is merged into the list under `Source: freevpn`.
 - Add a one-liner installer (`curl -fsSL https://raw.githubusercontent.com/KOUSSEMON-Aurel/vpngate/main/install.sh | bash`) that installs the binary from the latest GitHub release (falling back to `go install`) and the runtime dependencies (openvpn, wireguard-tools, wgcf) via the detected package manager.
 - Keep connected tunnels alive on relays with partial or flaky egress: the live-tunnel watchdog now probes several HTTPS endpoints in parallel (`gstatic`, `google`, `1.1.1.1`, `8.8.8.8` — two in pure IP) and treats any HTTP response as alive, instead of relying on a single `gstatic.com/generate_204` probe that produced false negatives and endless reconnect chains.
 - Make the watchdog less aggressive: a 30s grace window after connect and a threshold of 5 consecutive failures (~80s) before a relay is considered dead, so a transient outage no longer drops a working tunnel.

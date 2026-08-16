@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/davegallant/vpngate/pkg/vpn"
 )
@@ -539,4 +540,83 @@ func TestKeepAliveGraceWindowSkipsEarlyChecks(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// TestValidateProtocolFlag verifies the --protocol flag is normalized to
+// the canonical protocol names and that unknown values are rejected.
+func TestValidateProtocolFlag(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"openvpn", "openvpn"},
+		{"l2tp", "l2tp/ipsec"},
+		{"l2tp/ipsec", "l2tp/ipsec"},
+		{"ipsec", "l2tp/ipsec"},
+		{"sstp", "sstp"},
+		{"ms-sstp", "sstp"},
+		{"wireguard", "wireguard"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			flagProtocol = tt.in
+			err := validateProtocolFlag()
+			if tt.want == "" {
+				require.NoError(t, err)
+				assert.Empty(t, flagProtocol)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, flagProtocol)
+		})
+	}
+
+	flagProtocol = "ipsec+ppp"
+	require.Error(t, validateProtocolFlag())
+	flagProtocol = ""
+}
+
+// TestValidateTransportFlag verifies the --transport flag is normalized to
+// lowercase, accepts the four vpnbook transports, rejects unknown values
+// and refuses to combine a transport with a non-openvpn protocol.
+func TestValidateTransportFlag(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"tcp443", "tcp443"},
+		{"TCP443", "tcp443"},
+		{"tcp80", "tcp80"},
+		{"udp53", "udp53"},
+		{"UDP25000", "udp25000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			flagTransport = tt.in
+			flagProtocol = ""
+			err := validateTransportFlag()
+			if tt.want == "" {
+				require.NoError(t, err)
+				assert.Empty(t, flagTransport)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, flagTransport)
+		})
+	}
+
+	flagTransport = "sctp"
+	flagProtocol = ""
+	require.Error(t, validateTransportFlag())
+
+	flagTransport = "udp53"
+	flagProtocol = "l2tp/ipsec"
+	require.Error(t, validateTransportFlag())
+
+	flagTransport = ""
+	flagProtocol = ""
 }

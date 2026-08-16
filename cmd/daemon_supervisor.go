@@ -50,7 +50,11 @@ func runSupervisor() error {
 		return err
 	}
 	filtered := *filterServers(vpnServers)
+	filtered = *filterTransportServers(&filtered)
 	if len(filtered) == 0 {
+		if flagTransport != "" {
+			return fmt.Errorf("no vpnbook servers matched the provided filters (--transport is only supported for vpnbook servers)")
+		}
 		return fmt.Errorf("no vpn servers matched the provided filters")
 	}
 
@@ -147,6 +151,13 @@ func (s *supervisor) run() error {
 func (s *supervisor) connectOnce(server vpn.Server) error {
 	if server.Source == vpn.SourceWarp {
 		return errors.New("WARP does not support background (daemon) mode")
+	}
+	if flagProtocol != "" && flagProtocol != vpn.ProtocolOpenVPN {
+		return fmt.Errorf("background (daemon) mode only supports the openvpn protocol (got %q); run 'vpngate disconnect' and connect again without --protocol l2tp/ipsec or sstp", flagProtocol)
+	}
+	server, err := withRequestedTransport(server)
+	if err != nil {
+		return err
 	}
 	configData, err := vpn.ServerConfig(server)
 	if err != nil {

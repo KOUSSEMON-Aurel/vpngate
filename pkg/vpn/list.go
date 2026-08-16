@@ -35,6 +35,18 @@ const (
 	SourceVpnbook = "vpnbook"
 	// SourceWarp identifies the Cloudflare WARP tunnel.
 	SourceWarp = "warp"
+
+	// ProtocolOpenVPN connects through the openvpn binary with the
+	// server's embedded config.
+	ProtocolOpenVPN = "openvpn"
+	// ProtocolL2TPIPsec connects through strongswan (IPsec) + xl2tpd
+	// (L2TP) with the shared VPN Gate L2TP credentials.
+	ProtocolL2TPIPsec = "l2tp/ipsec"
+	// ProtocolSSTP connects through sstp-client with the shared VPN Gate
+	// SSTP credentials.
+	ProtocolSSTP = "sstp"
+	// ProtocolWireGuard connects through wg-quick (WARP only).
+	ProtocolWireGuard = "wireguard"
 )
 
 // vpnList is the URL of the vpngate server list API. It is a var so tests
@@ -71,6 +83,11 @@ type Server struct {
 	// Source is the provider that advertised this server, e.g. SourceVpngate
 	// or SourceVpnbook. It is not part of the vpngate CSV payload.
 	Source string `csv:"-" json:"source,omitempty"`
+	// Transport is the OpenVPN transport the server connects over by default
+	// (e.g. "tcp443" for vpnbook servers). It is empty for sources whose
+	// transport is fixed by the embedded config (vpngate relays are always
+	// reached over their config's tcp/udp proto).
+	Transport string `csv:"-" json:"transport,omitempty"`
 }
 
 // Proto returns the tunnel transport ("tcp" or "udp") declared in the
@@ -102,19 +119,71 @@ func (s Server) Proto() string {
 	return ""
 }
 
-// Protocol returns the VPN protocol a server connects with: "openvpn" for
-// relays carrying an embedded OpenVPN config (vpngate, vpnbook) and
-// "wireguard" for Cloudflare WARP. It returns "" when the protocol cannot be
-// determined. Distinct from Proto, which is the OpenVPN tunnel transport
-// (tcp or udp).
+// Protocol returns the primary VPN protocol a server connects with:
+// "openvpn" for relays carrying an embedded OpenVPN config (vpngate,
+// vpnbook) and "wireguard" for Cloudflare WARP. It returns "" when the
+// protocol cannot be determined. Distinct from Proto, which is the
+// OpenVPN tunnel transport (tcp or udp). Use Protocols to see every
+// protocol a server supports.
 func (s Server) Protocol() string {
-	if s.Source == SourceWarp {
-		return "wireguard"
-	}
-	if s.OpenVpnConfigData != "" {
-		return "openvpn"
+	if ps := s.Protocols(); len(ps) > 0 {
+		return ps[0]
 	}
 	return ""
+}
+
+// Protocols returns every VPN protocol a server can be connected with,
+// in decreasing order of reliability. VPN Gate software exposes OpenVPN,
+// L2TP/IPsec and MS-SSTP on every relay, so all three are offered for
+// vpngate relays even though the public CSV only carries the OpenVPN
+// config — the L2TP and SSTP credentials are shared and fixed for the
+// whole pool, so neither needs per-server data.
+func (s Server) Protocols() []string {
+	switch s.Source {
+	case SourceWarp:
+		return []string{ProtocolWireGuard}
+	case SourceVpnbook:
+		return []string{ProtocolOpenVPN}
+	case SourceVpngate:
+		return []string{ProtocolOpenVPN, ProtocolL2TPIPsec, ProtocolSSTP}
+	}
+	if s.OpenVpnConfigData != "" {
+		return []string{ProtocolOpenVPN}
+	}
+	return nil
+}
+
+// ProtocolLabel renders the server's supported protocols for list
+// output (e.g. "openvpn, l2tp/ipsec, sstp").
+func (s Server) ProtocolLabel() string {
+	return strings.Join(s.Protocols(), ", ")
+}
+
+// TransportLabel returns the OpenVPN transport the server connects over
+// by default: the embedded default for vpnbook servers ("tcp443"), or
+// the tcp/udp proto declared in the embedded OpenVPN config for other
+// sources. It returns "" when the transport cannot be determined.
+func (s Server) TransportLabel() string {
+	switch s.Source {
+	case SourceVpnbook:
+		if s.Transport != "" {
+			return s.Transport
+		}
+		return TransportTCP443
+	}
+	return s.Proto()
+}
+
+// Transports returns the OpenVPN transports a server can be connected
+// over, or nil when the transport is fixed by the embedded config.
+// vpnbook serves every server over all four transports; vpngate relays
+// and WARP are always reached the way their config declares.
+func (s Server) Transports() []string {
+	switch s.Source {
+	case SourceVpnbook:
+		return VpnbookTransports()
+	}
+	return nil
 }
 
 // SpeedLabel returns the relay's advertised speed as a short human-readable

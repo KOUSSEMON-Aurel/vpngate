@@ -64,6 +64,19 @@ func TestOpenvpnArgsNoAuthForVpngate(t *testing.T) {
 	args, err := openvpnArgs(Server{Source: SourceVpngate}, "/tmp/config.ovpn", 4)
 	assert.NoError(t, err)
 	assert.NotContains(t, args, "--auth-user-pass")
+	assert.Contains(t, args, "--data-ciphers")
+}
+
+// TestOpenvpnArgsNoForcedCiphersWhenConfigDeclaresDataCiphers verifies a
+// config that already declares data-ciphers (vpnbook) is launched without
+// the forced AES-128-CBC override, which would otherwise break cipher
+// negotiation with relays that do not offer it.
+func TestOpenvpnArgsNoForcedCiphersWhenConfigDeclaresDataCiphers(t *testing.T) {
+	enc := base64.StdEncoding.EncodeToString([]byte("client\ndata-ciphers AES-256-GCM:AES-128-GCM\nremote 1.2.3.4 443\n"))
+
+	args, err := openvpnArgs(Server{Source: SourceVpnbook, OpenVpnConfigData: enc}, "/tmp/config.ovpn", 4)
+	assert.NoError(t, err)
+	assert.NotContains(t, args, "--data-ciphers")
 }
 
 // TestOpenvpnArgsVpnbookAddsAuthUserPass verifies a vpnbook connect passes
@@ -119,6 +132,7 @@ func TestWriteServerConfigRoundTrip(t *testing.T) {
 	assert.NoError(t, err)
 	content := string(got)
 	assert.Contains(t, content, "remote 10.0.0.1 1194")
+	assert.Contains(t, content, "mssfix 1350")
 
 	// The IPv6 black-hole must match the host's reality, same as connect.
 	if HostRoutesIPv6() {

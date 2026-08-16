@@ -6,7 +6,7 @@
 #
 # Installs the vpngate binary (GitHub release, falling back to go install),
 # plus its runtime dependencies where a supported package manager exists:
-#   - openvpn        (required for the vpngate/vpnbook/freevpn relays)
+#   - openvpn        (required for the vpngate/vpnbook relays)
 #   - wireguard-tools (required for the wgcf Cloudflare WARP backend)
 #   - wgcf           (optional, WARP backend; go install when missing)
 #   - warp-cli       (optional, WARP fallback backend)

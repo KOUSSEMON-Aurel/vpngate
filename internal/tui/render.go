@@ -367,11 +367,20 @@ func sourceLabel(source string) string {
 	return source
 }
 
-// protocolLabel renders a server's VPN protocol for the list column, falling
-// back to a dash when it cannot be determined.
+// protocolLabel renders a server's supported VPN protocols for the list
+// column, falling back to a dash when none can be determined.
 func protocolLabel(s vpn.Server) string {
-	if p := s.Protocol(); p != "" {
+	if p := s.ProtocolLabel(); p != "" {
 		return p
+	}
+	return "-"
+}
+
+// transportLabel renders a server's default OpenVPN transport for the
+// detail pane, falling back to a dash when none can be determined.
+func transportLabel(s vpn.Server) string {
+	if t := s.TransportLabel(); t != "" {
+		return t
 	}
 	return "-"
 }
@@ -485,7 +494,7 @@ func (m *model) detailPane(w int) string {
 	var b strings.Builder
 	title := fmt.Sprintf(" %s %s %s %s", icon, s.HostName, flag, truncate(s.CountryLong, 12))
 	b.WriteString(styleHeader.Render(truncate(title, w)) + "\n")
-	line2 := fmt.Sprintf("   ip %-15s  protocol %-9s  score %-8d  latency %s  provider %-8s  %s", truncate(s.IPAddr, 15), protocolLabel(s), s.Score, latency, sourceLabel(s.Source), status)
+	line2 := fmt.Sprintf("   ip %-15s  protocol %-9s  transport %-7s  score %-8d  latency %s  provider %-8s  %s", truncate(s.IPAddr, 15), protocolLabel(s), transportLabel(s), s.Score, latency, sourceLabel(s.Source), status)
 	b.WriteString(truncate(line2, w) + "\n")
 	line3 := "   verdict  " + info.style.Render(verdict)
 	b.WriteString(truncate(line3, w) + "\n")

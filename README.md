@@ -82,6 +82,13 @@ sudo vpngate connect --best --country Japan
 
 # serveur aléatoire avec filtres de qualité
 sudo vpngate connect --random --country Japan --max-ping 100 --min-score 500000
+
+# transport vpnbook explicite (tcp443 par défaut ; tcp80, udp53, udp25000 disponibles)
+sudo vpngate connect us16 --transport udp53
+
+# protocole non-OpenVPN sur les relais vpngate (strongSwan/xl2tpd ou sstp-client requis)
+sudo vpngate connect public-vpn-55 --protocol l2tp/ipsec
+sudo vpngate connect public-vpn-55 --protocol sstp
 ```
 
 > `openvpn` crée une interface réseau : lancez `connect` avec `sudo` ou un utilisateur ayant les droits élevés.
@@ -218,8 +225,8 @@ Comportement configurable (sondes toutes les 10 s, grâce de 30 s, seuil de 5 é
 
 - [x] **WARP comme source dans le TUI** : Cloudflare WARP (`Source: warp`) est fusionné dans la liste. WARP n'a pas de relais communautaire à vérifier : son probe est un simple marqueur « working » sans latence mesurée, il trie donc *en dernier* dans les tris par ping (et derrière tous les relais mesurés dans `--best` et les reconnexions), tout en restant connectable explicitement (`connect warp`). Connecté via `wg-quick` (wgcf, création du profil automatique) ou `warp-cli` si disponible.
 - [x] **Installeur one-liner** : `curl -fsSL https://raw.githubusercontent.com/KOUSSEMON-Aurel/vpngate/main/install.sh | bash` installant openvpn, wireguard-tools, wgcf (et éventuellement warp-cli), puis le binaire vpngate.
-- [ ] **vpnbook multi-transport** : exposer les transports vpnbook `tcp443`/`tcp80`/`udp53`/`udp25000` (aujourd'hui un seul profil `tcp443` par serveur pour qu'il n'apparaisse qu'une fois dans la liste).
-- [ ] **L2TP/IPsec, SoftEther (SSL-VPN) et MS-SSTP sur le pool vpngate** : *nice-to-have, coût élevé / valeur incertaine*. Les relais vpngate exposent ces protocoles, mais le CSV public (`/api/iphone/`) ne transporte **que** `OpenVPN_ConfigData_Base64` — le support L2TP/SSTP/SoftEther n'est connu que via les pages HTML par serveur (scraping fragile, non versionné, peut casser à tout moment). Il faudrait en plus trois clients différents (`strongswan`, `sstp-client`, client SoftEther propriétaire dont le plugin VPN Gate n'est pas open source) et des credentials partagées distinctes de celles d'OpenVPN. Ne pas réévaluer sans preuve de stabilité du scraping HTML.
+- [x] **vpnbook multi-transport** : `connect --transport` expose les quatre transports vpnbook (`tcp443`, `tcp80`, `udp53`, `udp25000`) et les configs OpenVPN sont récupérées par transport au moment de la connexion. La liste affiche la colonne `Transport` et le TUI le détail par serveur ; sans `--transport`, le profil `tcp443` embarqué est utilisé. Seuls les serveurs vpnbook sont concernés (`--transport` avec une autre source ou un protocole non-OpenVPN est rejeté).
+- [x] **L2TP/IPsec et MS-SSTP sur le pool vpngate** : `connect --protocol l2tp/ipsec` (via strongswan + xl2tpd, username `vpn`, password `vpn`) et `connect --protocol sstp` (via sstp-client, `sstp://ip:443`) sélectionnent le protocole à la connexion. Aucun scraping HTML : l'adresse des relais vient du CSV. La validation live reste partielle selon les relais (egress parfois instable).
 - [ ] **`container-as-gateway` + kill switch** : router tout le trafic de la machine via un conteneur OpenVPN (passerelle par défaut = conteneur), avec règles nftables/iptables bloquant toute sortie hors du tunnel (`DROP` sauf via `tun0`), IPv6 bloqué et DNS forcé dans le tunnel → **zéro fuite** (IP et DNS) même si le tunnel tombe. Docker seul en `--network host` n'isole ni ne reroute rien : il partage le réseau de l'hôte.
 
 ## Notes

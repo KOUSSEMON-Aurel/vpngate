@@ -40,6 +40,8 @@ var (
 	flagWatch          bool
 	flagWatchInterval  time.Duration
 	flagTunnelHealth   bool
+	flagProtocol       string
+	flagTransport      string
 )
 
 func init() {
@@ -51,6 +53,8 @@ func init() {
 	connectCmd.Flags().IntVar(&flagMaxPing, "max-ping", 0, "filter out servers with ping higher than this value")
 	connectCmd.Flags().IntVar(&flagMinScore, "min-score", 0, "filter out servers with score lower than this value")
 	connectCmd.Flags().StringVar(&flagProto, "proto", "", "filter by tunnel transport (tcp or udp)")
+	connectCmd.Flags().StringVar(&flagProtocol, "protocol", "", "connect with the given VPN protocol (openvpn, l2tp/ipsec, or sstp; defaults to the server's primary protocol)")
+	connectCmd.Flags().StringVar(&flagTransport, "transport", "", "connect vpnbook servers over the given OpenVPN transport (tcp443, tcp80, udp53, or udp25000; defaults to tcp443)")
 	connectCmd.Flags().StringVar(&flagSource, "source", "", "filter by server source (vpngate, vpnbook, or warp)")
 	connectCmd.Flags().BoolVar(&flagRefresh, "refresh", false, "refresh the vpn server list cache before connecting")
 	connectCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "do not read from or write to the vpn server list cache")
@@ -83,6 +87,12 @@ var connectCmd = &cobra.Command{
 		if err := validateProtoFlag(); err != nil {
 			return err
 		}
+		if err := validateProtocolFlag(); err != nil {
+			return err
+		}
+		if err := validateTransportFlag(); err != nil {
+			return err
+		}
 
 		vpnServers, err := vpn.GetListWithOptions(flagProxy, flagSocks5Proxy, vpn.ListOptions{Refresh: flagRefresh, NoCache: flagNoCache})
 		if err != nil {
@@ -90,7 +100,11 @@ var connectCmd = &cobra.Command{
 		}
 
 		vpnServers = filterServers(vpnServers)
+		vpnServers = filterTransportServers(vpnServers)
 		if len(*vpnServers) == 0 {
+			if flagTransport != "" {
+				return fmt.Errorf("no vpnbook servers matched the provided filters (--transport is only supported for vpnbook servers)")
+			}
 			return fmt.Errorf("no vpn servers matched the provided filters")
 		}
 
@@ -352,7 +366,7 @@ func connectAttempt(ctx context.Context, s vpn.Server, emit func(string), health
 			return connectAttemptResult{err: ctx.Err()}
 		}
 		if err == nil {
-			err = errors.New("openvpn exited before initializing the tunnel")
+			err = errors.New("the vpn client exited before initializing the tunnel")
 		}
 		return connectAttemptResult{err: err}
 	}
@@ -369,7 +383,10 @@ type trackedWriter struct {
 }
 
 // Write splits p on newlines and delivers each non-empty line to emit,
-// closing the init/auth signal channels when their markers appear.
+// closing the init/auth signal channels when their markers appear. Each
+// tunnel implementation reports readiness with its own marker: the openvpn
+// "Initialization Sequence Completed" line, or the L2TP_UP / SSTP_UP
+// lines printed by the l2tp/ipsec and sstp wrapper scripts.
 func (w *trackedWriter) Write(p []byte) (int, error) {
 	for _, l := range strings.Split(string(p), "\n") {
 		if l == "" {
@@ -379,7 +396,9 @@ func (w *trackedWriter) Write(p []byte) (int, error) {
 			w.emit(l)
 		}
 		switch {
-		case strings.Contains(l, "Initialization Sequence Completed"):
+		case strings.Contains(l, "Initialization Sequence Completed"),
+			strings.Contains(l, "L2TP_UP"),
+			strings.Contains(l, "SSTP_UP"):
 			w.onceInit.Do(func() { close(w.initDone) })
 		case strings.Contains(l, "AUTH_FAILED"):
 			w.onceAuth.Do(func() { close(w.authDone) })
@@ -665,12 +684,91 @@ func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[s
 	return cands
 }
 
+// validateProtocolFlag normalizes the --protocol flag (accepting the
+// common aliases l2tp and ms-sstp) and rejects values the app does not
+// implement. Compatibility with a specific server's source is checked
+// later, at connection time, once the server is known.
+func validateProtocolFlag() error {
+	switch strings.ToLower(flagProtocol) {
+	case "":
+	case "openvpn":
+		flagProtocol = vpn.ProtocolOpenVPN
+	case "l2tp", "l2tp/ipsec", "ipsec":
+		flagProtocol = vpn.ProtocolL2TPIPsec
+	case "sstp", "ms-sstp":
+		flagProtocol = vpn.ProtocolSSTP
+	case "wireguard":
+		flagProtocol = vpn.ProtocolWireGuard
+	default:
+		return fmt.Errorf("unsupported protocol %q (supported: openvpn, l2tp/ipsec, sstp)", flagProtocol)
+	}
+	return nil
+}
+
+// validateTransportFlag normalizes the --transport flag and rejects
+// values vpnbook does not serve. Transports only apply to OpenVPN
+// profiles, so combining --transport with another protocol is an error.
+func validateTransportFlag() error {
+	if flagTransport == "" {
+		return nil
+	}
+	flagTransport = strings.ToLower(flagTransport)
+	if !vpn.ValidVpnbookTransport(flagTransport) {
+		return fmt.Errorf("unsupported transport %q (supported: %s)", flagTransport, strings.Join(vpn.VpnbookTransports(), ", "))
+	}
+	if flagProtocol != "" && flagProtocol != vpn.ProtocolOpenVPN {
+		return fmt.Errorf("--transport only applies to the openvpn protocol (got --protocol %s)", flagProtocol)
+	}
+	return nil
+}
+
+// filterTransportServers narrows the candidate list to vpnbook servers
+// when --transport is set. It returns the input untouched otherwise.
+func filterTransportServers(servers *[]vpn.Server) *[]vpn.Server {
+	if flagTransport == "" {
+		return servers
+	}
+	filtered := make([]vpn.Server, 0, len(*servers))
+	for _, s := range *servers {
+		if s.Source == vpn.SourceVpnbook {
+			filtered = append(filtered, s)
+		}
+	}
+	return &filtered
+}
+
+// withRequestedTransport applies the --transport flag to s: it fetches
+// the per-transport config from vpnbook unless the server already
+// carries it, and refuses servers whose transport is not selectable.
+func withRequestedTransport(s vpn.Server) (vpn.Server, error) {
+	if flagTransport == "" {
+		return s, nil
+	}
+	if s.Source != vpn.SourceVpnbook {
+		return s, fmt.Errorf("--transport is only supported for vpnbook servers (got %s)", s.Source)
+	}
+	if flagTransport == s.TransportLabel() {
+		return s, nil
+	}
+	return vpn.ServerWithVpnbookTransport(s, flagTransport)
+}
+
 // connectServer runs the tunnel for s via the Client matching its Source,
 // streaming each output line to out (when non-nil) until openvpn exits or
 // ctx is canceled. Debug verbosity (--verb 5) can be enabled with
-// VPNGATE_DEBUG.
+// VPNGATE_DEBUG. The --protocol flag selects the tunnel implementation
+// (openvpn, l2tp/ipsec or sstp; defaults to the server's primary
+// protocol).
 func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
-	return vpn.ClientFor(s).Connect(ctx, s, out)
+	s, err := withRequestedTransport(s)
+	if err != nil {
+		return err
+	}
+	client, err := vpn.ClientForProtocol(s, flagProtocol)
+	if err != nil {
+		return err
+	}
+	return client.Connect(ctx, s, out)
 }
 
 // hostRoutesIPv6 reports whether the host has a default IPv6 route, i.e.
@@ -790,6 +888,12 @@ func forwardableConnectArgs() []string {
 	}
 	if flagProto != "" {
 		args = append(args, "--proto", flagProto)
+	}
+	if flagProtocol != "" {
+		args = append(args, "--protocol", flagProtocol)
+	}
+	if flagTransport != "" {
+		args = append(args, "--transport", flagTransport)
 	}
 	if flagRefresh {
 		args = append(args, "--refresh")

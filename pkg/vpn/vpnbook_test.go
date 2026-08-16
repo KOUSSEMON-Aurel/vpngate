@@ -136,6 +136,73 @@ func TestFetchVpnbookServersSkipsFailedConfigs(t *testing.T) {
 	assert.Empty(t, servers)
 }
 
+// TestServerWithVpnbookTransport fetches the per-transport config for a
+// server and swaps it into the server copy, keeping the hostname found in
+// the embedded config.
+func TestServerWithVpnbookTransport(t *testing.T) {
+	embedded := base64.StdEncoding.EncodeToString([]byte("client\nproto tcp\nremote us16.vpnbook.com 443\n"))
+
+	mux := http.NewServeMux()
+	var gotProtocol string
+	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		gotProtocol = r.URL.Query().Get("protocol")
+		_, _ = w.Write([]byte("client\nproto udp\nremote us16.vpnbook.com 53 udp\n"))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	oldConfigURL := vpnbookConfigURL
+	vpnbookConfigURL = server.URL + "/config"
+	defer func() { vpnbookConfigURL = oldConfigURL }()
+
+	s := Server{Source: SourceVpnbook, OpenVpnConfigData: embedded}
+
+	updated, err := ServerWithVpnbookTransport(s, "udp53")
+	require.NoError(t, err)
+	assert.Equal(t, "udp53", gotProtocol)
+	assert.Equal(t, "udp53", updated.Transport)
+
+	config, err := base64.StdEncoding.DecodeString(updated.OpenVpnConfigData)
+	require.NoError(t, err)
+	assert.Contains(t, string(config), "remote us16.vpnbook.com 53 udp")
+	assert.Equal(t, "udp", updated.Proto())
+}
+
+// TestServerWithVpnbookTransportErrors covers the failure modes of the
+// per-transport config swap: unknown transports, configs without a remote
+// directive, and fetch failures.
+func TestServerWithVpnbookTransportErrors(t *testing.T) {
+	oldConfigURL := vpnbookConfigURL
+	defer func() { vpnbookConfigURL = oldConfigURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	vpnbookConfigURL = server.URL + "/config"
+
+	withRemote := Server{Source: SourceVpnbook, OpenVpnConfigData: base64.StdEncoding.EncodeToString([]byte("client\nremote us16.vpnbook.com 443 tcp\n"))}
+	withoutRemote := Server{Source: SourceVpnbook, OpenVpnConfigData: base64.StdEncoding.EncodeToString([]byte("client\ndev tun\n"))}
+
+	tests := []struct {
+		name      string
+		s         Server
+		transport string
+	}{
+		{"unknown transport", withRemote, "sctp"},
+		{"no remote directive", withoutRemote, TransportUDP25000},
+		{"config fetch failure", withRemote, TransportTCP80},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, err := ServerWithVpnbookTransport(tt.s, tt.transport)
+			require.Error(t, err)
+			assert.Equal(t, tt.s, updated)
+		})
+	}
+}
+
 // TestFetchVpnbookCredentials scrapes credentials from the fixture endpoint.
 func TestFetchVpnbookCredentials(t *testing.T) {
 	payload, err := os.ReadFile("../../test_data/vpnbook_rsc.txt")

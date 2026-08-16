@@ -75,20 +75,20 @@ var listCmd = &cobra.Command{
 
 		table := tw.NewWriter(os.Stdout)
 		if flagHealthCheck {
-			table.Header([]string{"#", "HostName", "Country", "Protocol", "Provider", "Ping", "Status", "Latency", "Score"})
+			table.Header([]string{"#", "HostName", "Country", "Protocol", "Transport", "Provider", "Ping", "Status", "Latency", "Score"})
 		} else {
-			table.Header([]string{"#", "HostName", "Country", "Protocol", "Provider", "Ping", "Score", "Speed", "Sessions", "Operator"})
+			table.Header([]string{"#", "HostName", "Country", "Protocol", "Transport", "Provider", "Ping", "Score", "Speed", "Sessions", "Operator"})
 		}
 
 		for i, v := range *vpnServers {
 			if flagHealthCheck {
 				r := probeResults[v.HostName]
-				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Protocol(), sourceLabel(v), v.Ping, probeStatusLabel(r.Status), probeLatencyLabel(r.LatencyMs), strconv.Itoa(v.Score)})
+				err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.ProtocolLabel(), transportLabel(v), sourceLabel(v), v.Ping, probeStatusLabel(r.Status), probeLatencyLabel(r.LatencyMs), strconv.Itoa(v.Score)})
 				if err != nil {
 					return err
 				}
 			} else {
-				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.Protocol(), sourceLabel(v), v.Ping, strconv.Itoa(v.Score), v.SpeedLabel(), strconv.Itoa(v.NumVpnSessions), truncateOperator(v.Operator)}); err != nil {
+				if err := table.Append([]string{strconv.Itoa(i + 1), v.HostName, v.CountryLong, v.ProtocolLabel(), transportLabel(v), sourceLabel(v), v.Ping, strconv.Itoa(v.Score), v.SpeedLabel(), strconv.Itoa(v.NumVpnSessions), truncateOperator(v.Operator)}); err != nil {
 					return err
 				}
 			}
