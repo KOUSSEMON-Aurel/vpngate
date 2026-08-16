@@ -44,6 +44,12 @@ func (c *ControlServer) Addr() string {
 	return c.listener.Addr().String()
 }
 
+// Close stops the server; a concurrent Serve loop returns on its next
+// Accept error.
+func (c *ControlServer) Close() error {
+	return c.listener.Close()
+}
+
 // Serve accepts connections until the listener is closed.
 func (c *ControlServer) Serve() {
 	for {

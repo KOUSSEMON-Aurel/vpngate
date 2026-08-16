@@ -43,14 +43,14 @@ func TestWaitForManagementSucceeds(t *testing.T) {
 		_, _ = conn.Read(buf)
 	}()
 
-	mgmt, err := waitForManagement(ln.Addr().String(), time.Second)
+	mgmt, err := (&supervisor{}).waitForManagement(ln.Addr().String(), time.Second)
 	assert.NoError(t, err)
 	assert.NotNil(t, mgmt)
 	defer func() { _ = mgmt.Close() }()
 }
 
 func TestWaitForManagementTimesOut(t *testing.T) {
-	_, err := waitForManagement("127.0.0.1:1", 300*time.Millisecond)
+	_, err := (&supervisor{}).waitForManagement("127.0.0.1:1", 300*time.Millisecond)
 	assert.Error(t, err)
 }
 
