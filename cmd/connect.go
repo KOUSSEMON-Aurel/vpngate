@@ -100,7 +100,7 @@ var connectCmd = &cobra.Command{
 		}
 
 		vpnServers = filterServers(vpnServers)
-		vpnServers = filterTransportServers(vpnServers)
+		vpnServers = filterTransportServers(vpnServers, flagTransport)
 		if len(*vpnServers) == 0 {
 			if flagTransport != "" {
 				return fmt.Errorf("no vpnbook servers matched the provided filters (--transport is only supported for vpnbook servers)")
@@ -723,9 +723,9 @@ func validateTransportFlag() error {
 }
 
 // filterTransportServers narrows the candidate list to vpnbook servers
-// when --transport is set. It returns the input untouched otherwise.
-func filterTransportServers(servers *[]vpn.Server) *[]vpn.Server {
-	if flagTransport == "" {
+// when transport is set. It returns the input untouched otherwise.
+func filterTransportServers(servers *[]vpn.Server, transport string) *[]vpn.Server {
+	if transport == "" {
 		return servers
 	}
 	filtered := make([]vpn.Server, 0, len(*servers))
@@ -737,20 +737,20 @@ func filterTransportServers(servers *[]vpn.Server) *[]vpn.Server {
 	return &filtered
 }
 
-// withRequestedTransport applies the --transport flag to s: it fetches
-// the per-transport config from vpnbook unless the server already
-// carries it, and refuses servers whose transport is not selectable.
-func withRequestedTransport(s vpn.Server) (vpn.Server, error) {
-	if flagTransport == "" {
+// withRequestedTransport applies transport to s: it fetches the
+// per-transport config from vpnbook unless the server already carries it,
+// and refuses servers whose transport is not selectable.
+func withRequestedTransport(s vpn.Server, transport string) (vpn.Server, error) {
+	if transport == "" {
 		return s, nil
 	}
 	if s.Source != vpn.SourceVpnbook {
-		return s, fmt.Errorf("--transport is only supported for vpnbook servers (got %s)", s.Source)
+		return s, fmt.Errorf("transport is only supported for vpnbook servers (got %s)", s.Source)
 	}
-	if flagTransport == s.TransportLabel() {
+	if transport == s.TransportLabel() {
 		return s, nil
 	}
-	return vpn.ServerWithVpnbookTransport(s, flagTransport)
+	return vpn.ServerWithVpnbookTransport(s, transport)
 }
 
 // connectServer runs the tunnel for s via the Client matching its Source,
@@ -760,7 +760,7 @@ func withRequestedTransport(s vpn.Server) (vpn.Server, error) {
 // (openvpn, l2tp/ipsec or sstp; defaults to the server's primary
 // protocol).
 func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
-	s, err := withRequestedTransport(s)
+	s, err := withRequestedTransport(s, flagTransport)
 	if err != nil {
 		return err
 	}

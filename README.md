@@ -40,7 +40,64 @@ brew install openvpn davegallant/public/vpngate
 
 ### Windows
 
-Installez OpenVPN depuis le [site officiel](https://openvpn.net/community-downloads/), téléchargez l'archive de la release Windows et extrayez-la. Ouvrez ensuite une invite de commandes *en tant qu'administrateur* et lancez `vpngate.exe`.
+Installez OpenVPN depuis le [site officiel](https://openvpn.net/community-downloads/), téléchargez l'archive de la release Windows et extrayez-la. Ouvrez ensuite une invite de commandes *en tant qu'administrateur* et lancez `vpngate.exe` (ou, si vous avez installé le binaire dans le `PATH`, `vpngate`).
+
+> Sur Windows, `vpngate connect` fonctionne sans `sudo` : il crée l'interface TUN via le driver OpenVPN (WinTun) installé au préalable.
+
+### Interface graphique (Tauri 2 — desktop Linux/macOS/Windows)
+
+Le GUI est une app **Tauri 2** (React + Vite dans `gui/`) qui communique avec le binaire Go via une **API HTTP locale**. Le binaire Go (`vpngate serve`) tourne en arrière-plan comme sidecar Tauri et expose une API REST sur `http://127.0.0.1:1865` (CORS `*`). Le frontend React parle `fetch` pur (pas d'invoke Tauri pour l'API) : la même interface tourne sur desktop (localhost) et mobile (base URL configurable dans `localStorage["vpngate.apiBase"]`).
+
+**Architecture** :
+- `vpngate serve` — backend HTTP (Go) : `GET /api/health`, `GET /api/servers?country&proto&transport&source&min_score&max_ping&refresh=1`, `GET /api/status`, `POST /api/connect`, `POST /api/disconnect`, `GET /api/logs`. Le sidecar est lancé automatiquement par Tauri ; la fermeture de l'app coupe son stdin → arrêt propre du tunnel.
+- `gui/` — frontend React : onglets **Serveurs** (filtres source/transport/pays/score, connexion par ligne + "Aléatoire") et **Logs** (rafraîchissement auto 3 s). UI française, sombre.
+- `gui/src-tauri/` — shell Rust Tauri 2 (`tauri-plugin-shell`) qui spawne le sidecar.
+
+**Prérequis** :
+- [Node.js](https://nodejs.org/) (npm)
+- [Rust](https://rustup.rs/) (target `x86_64-pc-windows-msvc` sous Windows / `x86_64-unknown-linux-gnu` sous Linux/macOS)
+- [Go](https://go.dev/doc/install) (CGO désactivé pour le sidecar statique)
+- Sous **Windows** : *Visual Studio Build Tools* avec "Desktop development with C++" (requis par Tauri + le linker MSVC).
+
+**Étapes (tous OS)** :
+
+```shell
+# 1. Entrer dans le répertoire GUI
+cd gui
+
+# 2. Build du binaire Go sidecar (statique, cross-compile possible)
+#    Sur Linux/macOS (cible hôte) :
+./scripts/build-sidecar.sh
+#    Sur Windows (cross-compile depuis Linux/WSL) :
+CGO_ENABLED=0 GOOS=windows go build -o gui/src-tauri/binaries/vpngate-x86_64-pc-windows-msvc.exe .
+#    Le binaire doit se nommer vpngate-<triple> (.exe sous Windows) dans gui/src-tauri/binaries/
+#    pour que Tauri le retrouve automatiquement.
+
+# 3. Installer les dépendances Node et builder le frontend
+npm install
+npm run build        # tsc && vite build
+
+# 4a. Mode développement (frontend + app Tauri locale, hot-reload)
+npm run tauri dev
+#    → lance le frontend sur http://localhost:5173 et spawne `vpngate serve` côté Tauri.
+
+# 4b. Build release (bureau + installer, pas de bundling d'OS)
+npm run tauri build
+#    → produit le bureau (deb/appimage/dmg/msi) dans gui/src-tauri/target/release/bundle/
+#       et copie le sidecar dans le bundle.
+```
+
+**Fonctionnement** :
+- `tauri dev` / `tauri build` spawn `vpngate serve` comme sidecar (via `tauri-plugin-shell`). Le sidecar écoute sur `127.0.0.1:1865`.
+- Le frontend appelle `http://127.0.0.1:1865/api/*` en `fetch` (CORS `*` autorisé).
+- Sur mobile, la même frontend parle le même API contre un daemon distant (`--addr 0.0.0.0:1865`), la base URL étant dans `localStorage["vpngate.apiBase"]`.
+- À la fermeture de l'app, le pipe stdin du sidecar se ferme → `vpngate serve` arrête le tunnel proprement (pas d'orphelin).
+
+**Dépannage** :
+- **Windows « no suitable environment found »** : installer les *Visual Studio Build Tools* avec "Desktop development with C++" (MSVC). Tauri 2 exige MSVC sous Windows.
+- **`vpngate` introuvable côté Tauri** : vérifier que le binaire est dans `gui/src-tauri/binaries/vpngate-<triple>` (ou `.exe` sous Windows) avec le bon triple (`rustc -vV | sed -n 's/^host: //p'`).
+- **Frontend ne touche pas l'API** : vérifier que `vpngate serve` tourne (`curl http://127.0.0.1:1865/api/health`) et que le `devUrl`/`baseURL` est cohérent.
+- **Pas de TUN / openvpn** : le GUI appelle `vpngate connect` ; il faut `openvpn` dans le `PATH` et les droits (sudo / WinTun driver).
 
 ### Compilation depuis les sources
 
@@ -50,6 +107,14 @@ Prérequis : [Go](https://go.dev/doc/install).
 git clone https://github.com/KOUSSEMON-Aurel/vpngate.git
 cd vpngate
 go build -o vpngate .
+```
+
+Cross-compilation (à partir de n'importe quel OS) :
+
+```shell
+CGO_ENABLED=0 go build -o vpngate-windows.exe .      # Windows
+CGO_ENABLED=0 go build -o vpngate-darwin .           # macOS
+CGO_ENABLED=0 go build -o vpngate-linux .            # Linux
 ```
 
 Ou installez directement le binaire dans `$GOBIN` :
@@ -70,6 +135,8 @@ source ~/.profile
 La référence complète des commandes est dans [la doc CLI](docs/cli/vpngate.md).
 
 > Sur macOS (Homebrew), ajoutez openvpn au PATH : `export PATH=$(brew --prefix openvpn)/sbin:$PATH`
+
+> Sur Windows, `vpngate connect` fonctionne sans `sudo` (l'interface TUN est créée via le driver OpenVPN WinTun) ; sur Linux/macOS, `sudo` est nécessaire pour ouvrir le périphérique TUN.
 
 ### Se connecter
 
@@ -228,6 +295,11 @@ Comportement configurable (sondes toutes les 10 s, grâce de 30 s, seuil de 5 é
 - [x] **vpnbook multi-transport** : `connect --transport` expose les quatre transports vpnbook (`tcp443`, `tcp80`, `udp53`, `udp25000`) et les configs OpenVPN sont récupérées par transport au moment de la connexion. La liste affiche la colonne `Transport` et le TUI le détail par serveur ; sans `--transport`, le profil `tcp443` embarqué est utilisé. Seuls les serveurs vpnbook sont concernés (`--transport` avec une autre source ou un protocole non-OpenVPN est rejeté).
 - [x] **L2TP/IPsec et MS-SSTP sur le pool vpngate** : `connect --protocol l2tp/ipsec` (via strongswan + xl2tpd, username `vpn`, password `vpn`) et `connect --protocol sstp` (via sstp-client, `sstp://ip:443`) sélectionnent le protocole à la connexion. Aucun scraping HTML : l'adresse des relais vient du CSV. La validation live reste partielle selon les relais (egress parfois instable).
 - [ ] **`container-as-gateway` + kill switch** : router tout le trafic de la machine via un conteneur OpenVPN (passerelle par défaut = conteneur), avec règles nftables/iptables bloquant toute sortie hors du tunnel (`DROP` sauf via `tun0`), IPv6 bloqué et DNS forcé dans le tunnel → **zéro fuite** (IP et DNS) même si le tunnel tombe. Docker seul en `--network host` n'isole ni ne reroute rien : il partage le réseau de l'hôte.
+- [x] **GUI Tauri (desktop + Android natif)** : une seule app, une seule UI (React) partagée entre desktop et mobile, tunnel natif intégré sur Android.
+  - **Desktop (fait)** : Tauri 2 + le binaire Go en sidecar (`externalBin`). Le backend HTTP `vpngate serve` expose l'API (`GET /api/health`, `GET /api/servers` avec filtres `country/proto/transport/source/min_score/max_ping/refresh`, `GET /api/status`, `POST /api/connect`, `POST /api/disconnect`, `GET /api/logs`) avec CORS `*`, par défaut sur `127.0.0.1:1865` (`--addr 0.0.0.0:1865` pour un daemon distant). Le frontend React de `gui/` parle HTTP pur (pas d'invoke Tauri), réutilisable sur mobile avec une base URL configurable dans `localStorage["vpngate.apiBase"]`. La fermeture de l'app coupe le stdin du sidecar → arrêt propre du tunnel.
+  - **Android** : tunnel natif **directement dans l'app** — pas d'export de profil, pas de sidecar (le spawn de binaire `Command.sidecar()` n'existe pas sur mobile, réponse officielle Tauri). Plugin Tauri mobile (Kotlin) étendant `VpnService` (pattern `TauriVpnService` d'EasyTier) qui distribue le FD TUN à `wireguard-go` (MIT) pour WARP ; la liste/probe des serveurs passe par le daemon Go distant (HTTP) ou une implémentation JS légère locale.
+  - **OpenVPN mobile (vpngate/vpnbook)** : sous réserve de licence — `ics-openvpn` est GPLv3, `OpenVPNAdapter` GPLv2 ; trancher (app closed-source vs GPL) avant d'embarquer un client OpenVPN.
+  - **Références** : `tauri-plugin-vpnservice` (EasyTier, pattern VpnService Kotlin, iOS incertain), `vpn9-app` (architecture Rust/Tauri/tunnel natif complète), `defguard/client` (structure desktop Rust/Tauri/React). Pas de plugin VPN first-party chez Tauri : à adapter, pas à installer.
 
 ## Notes
 

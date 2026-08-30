@@ -24,8 +24,14 @@ type supervisor struct {
 	vpnServers []vpn.Server
 	random     bool
 	reconnect  bool
-	logFile    *os.File
-	control    *daemon.ControlServer
+	// protocol and transport select the tunnel implementation and (for
+	// vpnbook servers) the OpenVPN transport. They come from flags on the
+	// re-exec'd daemon path and from the HTTP API on the serve path, so
+	// they live on the supervisor rather than in package globals.
+	protocol  string
+	transport string
+	logFile   *os.File
+	control   *daemon.ControlServer
 
 	mu        sync.Mutex
 	server    vpn.Server
@@ -50,7 +56,7 @@ func runSupervisor() error {
 		return err
 	}
 	filtered := *filterServers(vpnServers)
-	filtered = *filterTransportServers(&filtered)
+	filtered = *filterTransportServers(&filtered, flagTransport)
 	if len(filtered) == 0 {
 		if flagTransport != "" {
 			return fmt.Errorf("no vpnbook servers matched the provided filters (--transport is only supported for vpnbook servers)")
@@ -101,6 +107,8 @@ func runSupervisor() error {
 		vpnServers: filtered,
 		random:     flagRandom,
 		reconnect:  flagReconnect,
+		protocol:   flagProtocol,
+		transport:  flagTransport,
 		logFile:    logFile,
 		server:     initial,
 	}
@@ -152,10 +160,10 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 	if server.Source == vpn.SourceWarp {
 		return errors.New("WARP does not support background (daemon) mode")
 	}
-	if flagProtocol != "" && flagProtocol != vpn.ProtocolOpenVPN {
-		return fmt.Errorf("background (daemon) mode only supports the openvpn protocol (got %q); run 'vpngate disconnect' and connect again without --protocol l2tp/ipsec or sstp", flagProtocol)
+	if s.protocol != "" && s.protocol != vpn.ProtocolOpenVPN {
+		return fmt.Errorf("background mode only supports the openvpn protocol (got %q)", s.protocol)
 	}
-	server, err := withRequestedTransport(server)
+	server, err := withRequestedTransport(server, s.transport)
 	if err != nil {
 		return err
 	}
@@ -177,10 +185,13 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 		return fmt.Errorf("starting openvpn: %w", err)
 	}
 
-	mgmt, err := waitForManagement(mgmtAddr, 30*time.Second)
+	mgmt, err := s.waitForManagement(mgmtAddr, 30*time.Second)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		if errors.Is(err, errTunnelStopped) {
+			return nil
+		}
 		return err
 	}
 
@@ -270,10 +281,19 @@ func reserveLoopbackAddr() (string, error) {
 }
 
 // waitForManagement polls addr until OpenVPN's management interface
-// accepts a connection, or timeout elapses.
-func waitForManagement(addr string, timeout time.Duration) (*daemon.Management, error) {
+// accepts a connection, a stop is requested, or timeout elapses. It is a
+// method (rather than a plain function) so the serve path — where a
+// disconnect arrives over HTTP while openvpn is still starting — answers
+// promptly instead of waiting out the full timeout.
+func (s *supervisor) waitForManagement(addr string, timeout time.Duration) (*daemon.Management, error) {
 	deadline := time.Now().Add(timeout)
 	for {
+		s.mu.Lock()
+		stopping := s.stopping
+		s.mu.Unlock()
+		if stopping {
+			return nil, errTunnelStopped
+		}
 		mgmt, err := daemon.DialManagement(addr, time.Second)
 		if err == nil {
 			return mgmt, nil
