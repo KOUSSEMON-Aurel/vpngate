@@ -40,7 +40,36 @@ brew install openvpn davegallant/public/vpngate
 
 ### Windows
 
-Installez OpenVPN depuis le [site officiel](https://openvpn.net/community-downloads/), téléchargez l'archive de la release Windows et extrayez-la. Ouvrez ensuite une invite de commandes *en tant qu'administrateur* et lancez `vpngate.exe`.
+Installez OpenVPN depuis le [site officiel](https://openvpn.net/community-downloads/), téléchargez l'archive de la release Windows et extrayez-la. Ouvrez ensuite une invite de commandes *en tant qu'administrateur* et lancez `vpngate.exe` (ou, si vous avez installé le binaire dans le `PATH`, `vpngate`).
+
+> Sur Windows, `vpngate connect` fonctionne sans `sudo` : il crée l'interface TUN via le driver OpenVPN (WinTun) installé au préalable.
+
+### Interface graphique (Tauri, multi-plateforme)
+
+Le GUI desktop est dans `gui/` : une app Tauri 2 (React + Vite) qui parle au binaire Go via une API HTTP locale (`vpngate serve`). Même frontend sur desktop et mobile (sur mobile, la base URL de l'API est configurable).
+
+**Prérequis** : [Node.js](https://nodejs.org/), [Rust](https://rustup.rs/) (target `x86_64-pc-windows-msvc` sous Windows / `x86_64-unknown-linux-gnu` sous Linux), [Go](https://go.dev/doc/install). Sous Windows, installez aussi les *Visual Studio Build Tools* avec "Desktop development with C++" (requis par Tauri).
+
+```shell
+# 1. Build du binaire Go sidecar (cross-compile possible depuis Linux)
+cd gui
+scripts/build-sidecar.sh          # Linux
+# sous Windows : CGO_ENABLED=0 GOOS=windows go build -o gui/src-tauri/binaries/vpngate-x86_64-pc-windows-msvc.exe .
+
+# 2. Installation des deps Node + build frontend
+npm install
+npm run build
+
+# 3. Dev (frontend + app Tauri locale)
+npm run tauri dev
+
+# 4. Build release (bureau + installer, remplace le binaire Go par le sidecar)
+npm run tauri build
+```
+
+L'appli lance automatiquement `vpngate serve` comme sidecar ; le frontend consomme `http://127.0.0.1:1865`. Sur Windows le binaire attend `vpngate-x86_64-pc-windows-msvc.exe` dans `gui/src-tauri/binaries/`.
+
+La compilation cross-plateforme du GUI nécessite de builder le sidecar Go pour la cible visée (`GOOS=windows` ou `GOOS=darwin`) puis `tauri build --target <triple>`. Le binaire Go est statique (CGO désactivé), il est donc portable.
 
 ### Compilation depuis les sources
 
@@ -50,6 +79,14 @@ Prérequis : [Go](https://go.dev/doc/install).
 git clone https://github.com/KOUSSEMON-Aurel/vpngate.git
 cd vpngate
 go build -o vpngate .
+```
+
+Cross-compilation (à partir de n'importe quel OS) :
+
+```shell
+CGO_ENABLED=0 go build -o vpngate-windows.exe .      # Windows
+CGO_ENABLED=0 go build -o vpngate-darwin .           # macOS
+CGO_ENABLED=0 go build -o vpngate-linux .            # Linux
 ```
 
 Ou installez directement le binaire dans `$GOBIN` :
@@ -70,6 +107,8 @@ source ~/.profile
 La référence complète des commandes est dans [la doc CLI](docs/cli/vpngate.md).
 
 > Sur macOS (Homebrew), ajoutez openvpn au PATH : `export PATH=$(brew --prefix openvpn)/sbin:$PATH`
+
+> Sur Windows, `vpngate connect` fonctionne sans `sudo` (l'interface TUN est créée via le driver OpenVPN WinTun) ; sur Linux/macOS, `sudo` est nécessaire pour ouvrir le périphérique TUN.
 
 ### Se connecter
 

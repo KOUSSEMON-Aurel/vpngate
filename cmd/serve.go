@@ -121,8 +121,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	go func() {
 		if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeNamedPipe != 0 {
 			_, _ = io.Copy(io.Discard, os.Stdin)
+			close(shutdown)
 		}
-		close(shutdown)
 	}()
 
 	interrupt := make(chan os.Signal, 1)
