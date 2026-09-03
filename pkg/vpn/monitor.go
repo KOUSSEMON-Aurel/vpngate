@@ -25,9 +25,10 @@ type Monitor struct {
 	servers  []Server
 	results  map[string]ProbeResult
 	rounds   uint64
-	running  bool
-	inFlight bool
-	paused   bool
+	running     bool
+	inFlight    bool
+	paused      bool
+	roundCancel context.CancelFunc
 
 	concurrency int
 	timeout     time.Duration
@@ -83,12 +84,21 @@ func (m *Monitor) Start() {
 }
 
 // Pause suspends automatic verification rounds until Resume is called.
-// In-flight probes finish, but no new round is scheduled and ForceRound
-// becomes a no-op. Used while a tunnel is up, when probing through the
-// tunnel would produce meaningless results.
+// In-flight probes are cancelled immediately so they do not run through
+// the live VPN tunnel and report false failures.
 func (m *Monitor) Pause() {
 	m.mu.Lock()
 	m.paused = true
+	if m.roundCancel != nil {
+		m.roundCancel()
+		m.roundCancel = nil
+	}
+	// Clear any lingering "checking" status so servers don't spin while paused.
+	for k, v := range m.results {
+		if v.Status == ProbeChecking {
+			delete(m.results, k)
+		}
+	}
 	m.mu.Unlock()
 }
 
@@ -105,6 +115,7 @@ func (m *Monitor) Resume() {
 	case m.resume <- struct{}{}:
 	default:
 	}
+	m.ForceRound()
 }
 
 func (m *Monitor) isPaused() bool {
@@ -164,26 +175,44 @@ func (m *Monitor) ForceRound() {
 }
 
 func (m *Monitor) runRound() {
+	m.mu.Lock()
+	if m.paused {
+		m.inFlight = false
+		m.mu.Unlock()
+		return
+	}
+	roundCtx, roundCancel := context.WithCancel(m.ctx)
+	m.roundCancel = roundCancel
+	m.mu.Unlock()
+
 	defer func() {
 		m.mu.Lock()
 		m.inFlight = false
+		roundCancel()
+		if m.roundCancel != nil {
+			m.roundCancel = nil
+		}
 		m.mu.Unlock()
 	}()
 
 	m.markChecking()
-	results := ProbeServers(m.ctx, m.servers, m.concurrency, m.timeout, func(name string, res ProbeResult) {
+	results := ProbeServers(roundCtx, m.servers, m.concurrency, m.timeout, func(name string, res ProbeResult) {
 		// Publish each completed probe immediately so consumers (such as
 		// the TUI) stream statuses live while the round is still running.
 		m.mu.Lock()
-		m.results[name] = res
+		if !m.paused {
+			m.results[name] = res
+		}
 		m.mu.Unlock()
 	})
 
 	m.mu.Lock()
-	for name, res := range results {
-		m.results[name] = res
+	if !m.paused {
+		for name, res := range results {
+			m.results[name] = res
+		}
+		m.rounds++
 	}
-	m.rounds++
 	m.mu.Unlock()
 }
 
