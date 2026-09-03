@@ -1,22 +1,27 @@
-// The vpngate desktop app is a thin shell: it spawns the Go binary as a
-// sidecar (`vpngate serve`) and the React frontend talks to its HTTP API
-// over http://127.0.0.1:1865 — the same API the mobile app will use
-// against a remote daemon. When the app exits, the sidecar's stdin pipe
-// closes and `vpngate serve` shuts the tunnel down gracefully.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::Mutex;
+use tauri::Manager;
+use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+
+struct SidecarState(Mutex<Option<CommandChild>>);
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
-            app.shell()
+            if let Ok((_rx, child)) = app
+                .shell()
                 .sidecar("vpngate")
                 .expect("vpngate sidecar not configured (see bundle.externalBin)")
                 .args(["serve"])
                 .spawn()
-                .expect("failed to spawn the vpngate sidecar");
+            {
+                let state = app.state::<SidecarState>();
+                *state.0.lock().unwrap() = Some(child);
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
