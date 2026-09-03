@@ -8,17 +8,17 @@ import {
   Copy,
   Check,
   Search,
-  Wifi,
   Lock,
   Clock,
   Power,
   Dices,
   Cloud,
   ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import { api, ServerInfo, StatusInfo } from "./api";
 
-// Custom Geometric Gateway Portal Icon (No generic shield)
+// Minimalist Portal Gateway Glyph
 function GatePortalIcon() {
   return (
     <svg
@@ -60,15 +60,32 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [copiedIp, setCopiedIp] = useState(false);
 
-  // Selected Target Relay
-  const [selectedServer, setSelectedServer] = useState<ServerInfo | null>(null);
+  // Live Health Map (hostname -> { status, latency_ms })
+  const [healthMap, setHealthMap] = useState<
+    Record<string, { status: "working" | "failed" | "checking" | "unknown"; latency_ms?: number }>
+  >({});
+
+  // Manual Target Relay (null = Mode Automatique / "⚡ Emplacement le plus rapide")
+  const [selectedServer, setSelectedServer] = useState<ServerInfo | null>(() => {
+    const saved = localStorage.getItem("vpngate.selectedServer");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
 
   // Master-Detail State in Servers Tab
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [onlineOnly, setOnlineOnly] = useState<boolean>(false);
+  const [sortBy, setSortBy] = useState<"health" | "ping" | "score" | "country">("health");
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
-  // Live Timer
+  // Live Duration Timer
   const [duration, setDuration] = useState("00:00:00");
   const startTimerRef = useRef<number | null>(null);
 
@@ -103,6 +120,22 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Polling Live Probing Health from Go Monitor
+  useEffect(() => {
+    if (backend !== "ok") return;
+    const pollHealth = async () => {
+      try {
+        const res = await api.serversHealth();
+        setHealthMap(res);
+      } catch {
+        // ignore
+      }
+    };
+    void pollHealth();
+    const interval = setInterval(pollHealth, 3000);
+    return () => clearInterval(interval);
+  }, [backend]);
+
   // Duration clock
   useEffect(() => {
     if (!connected || !startTimerRef.current) return;
@@ -117,27 +150,34 @@ export default function App() {
     return () => clearInterval(interval);
   }, [connected]);
 
-  // Load server list
+  // Load servers
   const loadServers = useCallback(async () => {
     try {
       setError("");
       const list = await api.servers();
       setServers(list);
-      if (!selectedServer && list.length > 0) {
-        const sorted = [...list].sort((a, b) => parsePing(a.ping) - parsePing(b.ping));
-        setSelectedServer(sorted[0]);
-        setSelectedCountryCode(sorted[0].country_short.toUpperCase());
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [selectedServer]);
+  }, []);
 
   useEffect(() => {
     if (backend === "ok") void loadServers();
   }, [backend, loadServers]);
 
-  // Connect & Disconnect
+  // Enriched servers list merging live health status
+  const enrichedServers = useMemo(() => {
+    return servers.map((s) => {
+      const live = healthMap[s.hostname];
+      return {
+        ...s,
+        health: live ? live.status : s.health || "unknown",
+        latency_ms: live && live.latency_ms ? live.latency_ms : s.latency_ms,
+      };
+    });
+  }, [servers, healthMap]);
+
+  // Connect & Disconnect handlers
   const handleConnect = useCallback(
     async (target?: ServerInfo, options: { random?: boolean; source?: string } = {}) => {
       setBusy(true);
@@ -161,6 +201,25 @@ export default function App() {
             transport: selectedServer.transport,
             source: selectedServer.source,
           });
+        } else {
+          // Mode Automatique : Se connecter au meilleur serveur en ligne (ou au plus bas ping)
+          const working = enrichedServers.filter((s) => s.health === "working");
+          const pool = working.length > 0 ? working : enrichedServers;
+          if (pool.length > 0) {
+            const sorted = [...pool].sort((a, b) => {
+              const pingA = a.latency_ms || parsePing(a.ping);
+              const pingB = b.latency_ms || parsePing(b.ping);
+              return pingA - pingB;
+            });
+            await api.connect({
+              hostname: sorted[0].hostname,
+              protocol: sorted[0].proto,
+              transport: sorted[0].transport,
+              source: sorted[0].source,
+            });
+          } else {
+            await api.connect({ random: true });
+          }
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -168,7 +227,7 @@ export default function App() {
         setBusy(false);
       }
     },
-    [selectedServer]
+    [selectedServer, enrichedServers]
   );
 
   const handleDisconnect = useCallback(async () => {
@@ -183,11 +242,25 @@ export default function App() {
     }
   }, []);
 
+  // Save selected server to localStorage
+  const pickTargetServer = (s: ServerInfo | null) => {
+    setSelectedServer(s);
+    if (s) {
+      localStorage.setItem("vpngate.selectedServer", JSON.stringify(s));
+    } else {
+      localStorage.removeItem("vpngate.selectedServer");
+    }
+    setActiveTab("connect");
+  };
+
   // Group servers by country for Master-Detail view
   const countryGroups = useMemo(() => {
-    let list = servers;
+    let list = enrichedServers;
     if (sourceFilter !== "all") {
       list = list.filter((s) => (s.source || "vpngate") === sourceFilter);
+    }
+    if (onlineOnly) {
+      list = list.filter((s) => s.health === "working");
     }
     if (search.trim()) {
       const q = search.toLowerCase().trim();
@@ -205,38 +278,76 @@ export default function App() {
       {
         country_long: string;
         country_short: string;
-        servers: ServerInfo[];
+        servers: typeof enrichedServers;
         bestPing: number;
+        workingCount: number;
       }
     >();
 
     for (const s of list) {
       const key = s.country_short.toUpperCase();
       const existing = map.get(key);
-      const pingNum = parsePing(s.ping);
+      const pingNum = s.latency_ms || parsePing(s.ping);
+      const isUp = s.health === "working";
+
       if (!existing) {
         map.set(key, {
           country_long: s.country_long,
           country_short: s.country_short,
           servers: [s],
           bestPing: pingNum,
+          workingCount: isUp ? 1 : 0,
         });
       } else {
         existing.servers.push(s);
+        if (isUp) existing.workingCount++;
         if (pingNum < existing.bestPing) existing.bestPing = pingNum;
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => a.country_long.localeCompare(b.country_long));
-  }, [servers, sourceFilter, search]);
+    const result = Array.from(map.values());
 
-  // Currently active country in detail pane
+    // Sort countries according to chosen strategy
+    if (sortBy === "health") {
+      result.sort((a, b) => b.workingCount - a.workingCount || a.bestPing - b.bestPing);
+    } else if (sortBy === "ping") {
+      result.sort((a, b) => a.bestPing - b.bestPing);
+    } else if (sortBy === "score") {
+      result.sort(
+        (a, b) =>
+          Math.max(...b.servers.map((s) => s.score)) - Math.max(...a.servers.map((s) => s.score))
+      );
+    } else {
+      result.sort((a, b) => a.country_long.localeCompare(b.country_long));
+    }
+
+    // Also sort servers inside each country
+    for (const g of result) {
+      g.servers.sort((a, b) => {
+        if (sortBy === "health") {
+          const rank = (h?: string) => (h === "working" ? 0 : h === "checking" ? 1 : h === "failed" ? 3 : 2);
+          if (rank(a.health) !== rank(b.health)) return rank(a.health) - rank(b.health);
+        }
+        const pingA = a.latency_ms || parsePing(a.ping);
+        const pingB = b.latency_ms || parsePing(b.ping);
+        return pingA - pingB;
+      });
+    }
+
+    return result;
+  }, [enrichedServers, sourceFilter, onlineOnly, search, sortBy]);
+
+  // Active country in the Detail Pane
   const activeCountry = useMemo(() => {
     if (!selectedCountryCode && countryGroups.length > 0) {
       return countryGroups[0];
     }
     return countryGroups.find((g) => g.country_short.toUpperCase() === selectedCountryCode) || countryGroups[0];
   }, [countryGroups, selectedCountryCode]);
+
+  // Selected server health state
+  const targetHealth = selectedServer ? healthMap[selectedServer.hostname]?.status || selectedServer.health || "unknown" : "unknown";
+  const targetLatency = selectedServer ? healthMap[selectedServer.hostname]?.latency_ms || selectedServer.latency_ms : undefined;
 
   const copyIp = (ip?: string) => {
     if (!ip) return;
@@ -346,7 +457,7 @@ export default function App() {
 
         <div className="stage-content">
           {/* ========================================================
-              TAB: CONNECTION
+              TAB: CONNECTION (ACCUEIL)
               ======================================================== */}
           {activeTab === "connect" && (
             <div className="connection-panel">
@@ -382,7 +493,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Selected Relay Card */}
+                {/* Target Location Card */}
                 <div
                   className="target-relay-card"
                   onClick={() => setActiveTab("servers")}
@@ -390,36 +501,43 @@ export default function App() {
                 >
                   <div className="relay-country-group">
                     <span className="country-flag-display">
-                      {getCountryFlag(
-                        connected
-                          ? status.country?.slice(0, 2)
-                          : selectedServer?.country_short
-                      )}
+                      {connected
+                        ? getCountryFlag(status.country?.slice(0, 2))
+                        : selectedServer
+                        ? getCountryFlag(selectedServer.country_short)
+                        : "⚡"}
                     </span>
                     <div className="relay-location-details">
                       <span className="relay-country-heading">
                         {connected
-                          ? status.country || "Japon"
+                          ? status.country || "Relais Distant"
                           : selectedServer
                           ? selectedServer.country_long
-                          : "Choisir un pays"}
+                          : "Emplacement le plus rapide"}
                       </span>
                       <span className="relay-server-subtext">
                         {connected
                           ? status.hostname || status.ip_addr
                           : selectedServer
                           ? `${selectedServer.hostname} • ${selectedServer.ip}`
-                          : "Cliquer pour parcourir les emplacements"}
+                          : "Sélectionne automatiquement le meilleur relais en ligne"}
                       </span>
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     {!connected && selectedServer && (
-                      <div className="relay-latency-pill">
-                        <Wifi size={12} />
-                        <span>{selectedServer.ping}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span className={`health-dot ${targetHealth}`} />
+                        <span style={{ fontSize: "11.5px", fontFamily: "monospace", color: targetHealth === "working" ? "var(--accent-green)" : "var(--text-muted)" }}>
+                          {targetLatency ? `${targetLatency}ms` : selectedServer.ping}
+                        </span>
                       </div>
+                    )}
+                    {!connected && !selectedServer && (
+                      <span className="clean-spec-tag" style={{ color: "var(--accent-green)", borderColor: "var(--accent-green-border)" }}>
+                        Auto
+                      </span>
                     )}
                     <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                       Modifier
@@ -427,6 +545,18 @@ export default function App() {
                     <ChevronRight size={14} color="var(--text-muted)" />
                   </div>
                 </div>
+
+                {/* Reset to Auto button if manual server was selected */}
+                {!connected && selectedServer && (
+                  <button
+                    className="btn-clean-ghost"
+                    onClick={() => pickTargetServer(null)}
+                    style={{ alignSelf: "flex-start", marginTop: "-8px", padding: "4px 8px", fontSize: "11px" }}
+                  >
+                    <RotateCcw size={11} />
+                    <span>Rétablir la sélection automatique (⚡ Plus rapide)</span>
+                  </button>
+                )}
 
                 {/* Connect / Disconnect Action */}
                 <button
@@ -448,7 +578,9 @@ export default function App() {
                       ? "Déconnecter"
                       : connecting
                       ? "Connexion en cours..."
-                      : "Se connecter"}
+                      : selectedServer
+                      ? `Se connecter à ${selectedServer.country_long}`
+                      : "Se connecter au plus rapide"}
                   </span>
                 </button>
               </div>
@@ -490,7 +622,7 @@ export default function App() {
                         ? status.protocol || "OpenVPN (tun0)"
                         : selectedServer
                         ? `${selectedServer.proto.toUpperCase()} ${selectedServer.transport || ""}`
-                        : "OpenVPN"}
+                        : "OpenVPN (Auto)"}
                     </span>
                   </div>
                 </div>
@@ -512,16 +644,14 @@ export default function App() {
                   className="shortcut-btn"
                   disabled={busy || connected}
                   onClick={() => {
-                    if (servers.length > 0) {
-                      const sorted = [...servers].sort((a, b) => parsePing(a.ping) - parsePing(b.ping));
-                      void handleConnect(sorted[0]);
-                    }
+                    pickTargetServer(null);
+                    void handleConnect();
                   }}
                 >
                   <Zap size={15} color="var(--accent-green)" />
                   <div>
                     <div style={{ color: "#fff" }}>Plus rapide</div>
-                    <div style={{ fontSize: "10.5px", color: "var(--text-tertiary)" }}>Ping le plus bas</div>
+                    <div style={{ fontSize: "10.5px", color: "var(--text-tertiary)" }}>Automatique</div>
                   </div>
                 </button>
 
@@ -553,7 +683,7 @@ export default function App() {
           )}
 
           {/* ========================================================
-              TAB: SERVERS (MASTER-DETAIL PANE)
+              TAB: SERVERS (MASTER-DETAIL PANE WITH LIVE UP/DOWN)
               ======================================================== */}
           {activeTab === "servers" && (
             <div className="master-detail-container">
@@ -604,6 +734,29 @@ export default function App() {
                       WARP
                     </button>
                   </div>
+
+                  {/* Secondary filter & sort row (like TUI) */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px", paddingTop: "4px" }}>
+                    <button
+                      className={`pane-chip-filter ${onlineOnly ? "active" : ""}`}
+                      onClick={() => setOnlineOnly(!onlineOnly)}
+                      title="Afficher uniquement les serveurs confirmés en ligne"
+                    >
+                      🟢 En ligne
+                    </button>
+
+                    <select
+                      className="select-clean"
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      title="Options de tri"
+                    >
+                      <option value="health">Trier: Santé d'abord</option>
+                      <option value="ping">Trier: Latence / Ping</option>
+                      <option value="score">Trier: Qualité</option>
+                      <option value="country">Trier: Pays (A-Z)</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="countries-scroll-list">
@@ -621,7 +774,9 @@ export default function App() {
                           </span>
                           <div>
                             <span className="country-name-txt">{group.country_long}</span>
-                            <span className="country-servers-count">({group.servers.length})</span>
+                            <span className="country-servers-count">
+                              ({group.workingCount > 0 ? `🟢 ${group.workingCount}/` : ""}{group.servers.length})
+                            </span>
                           </div>
                         </div>
 
@@ -655,7 +810,7 @@ export default function App() {
                             {activeCountry.country_long}
                           </div>
                           <div style={{ fontSize: "11.5px", color: "var(--text-tertiary)" }}>
-                            {activeCountry.servers.length} relais disponibles
+                            {activeCountry.servers.length} relais ({activeCountry.workingCount} confirmés 🟢 en ligne)
                           </div>
                         </div>
                       </div>
@@ -664,25 +819,54 @@ export default function App() {
                         className="btn-select-relay"
                         disabled={busy || connected}
                         onClick={() => {
-                          const best = [...activeCountry.servers].sort(
-                            (a, b) => parsePing(a.ping) - parsePing(b.ping)
-                          )[0];
-                          setSelectedServer(best);
-                          setActiveTab("connect");
+                          const working = activeCountry.servers.filter((s) => s.health === "working");
+                          const best = (working.length > 0 ? working : activeCountry.servers)[0];
+                          pickTargetServer(best);
                         }}
                       >
-                        Choisir le plus rapide
+                        ⚡ Choisir le plus rapide
                       </button>
                     </div>
 
                     <div className="relays-scroll-list">
                       {activeCountry.servers.map((s) => {
                         const isCurrentTarget = selectedServer?.hostname === s.hostname;
+                        const health = s.health || "unknown";
+                        const latency = s.latency_ms || parsePing(s.ping);
+
                         return (
                           <div key={s.hostname} className="relay-card-row">
-                            <div className="relay-info-cluster">
-                              <span className="relay-hostname-bold">{s.hostname}</span>
-                              <span className="relay-ip-sub">{s.ip}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                              {/* Live Health Status Dot (Green/Red/Amber/Gray) */}
+                              <span
+                                className={`health-dot ${health}`}
+                                title={
+                                  health === "working"
+                                    ? "Relais vérifié et en ligne (UP)"
+                                    : health === "failed"
+                                    ? "Relais inaccessible ou hors ligne (DOWN)"
+                                    : health === "checking"
+                                    ? "Vérification de connectivité en cours..."
+                                    : "Non testé"
+                                }
+                              />
+
+                              <div className="relay-info-cluster">
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span className="relay-hostname-bold">{s.hostname}</span>
+                                  {health === "working" && (
+                                    <span style={{ fontSize: "10px", color: "var(--accent-green)", fontWeight: 600 }}>
+                                      EN LIGNE
+                                    </span>
+                                  )}
+                                  {health === "failed" && (
+                                    <span style={{ fontSize: "10px", color: "var(--accent-red)", fontWeight: 600 }}>
+                                      HORS LIGNE
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="relay-ip-sub">{s.ip}</span>
+                              </div>
                             </div>
 
                             <div className="relay-tags-cluster">
@@ -692,21 +876,18 @@ export default function App() {
                                 style={{
                                   fontSize: "11.5px",
                                   fontFamily: "JetBrains Mono, monospace",
-                                  color: "var(--accent-green)",
+                                  color: health === "working" ? "var(--accent-green)" : "var(--text-tertiary)",
                                   minWidth: "48px",
                                   textAlign: "right",
                                 }}
                               >
-                                {s.ping}
+                                {latency < 9000 ? `${latency}ms` : s.ping}
                               </span>
 
                               <button
                                 className="btn-select-relay"
                                 disabled={busy || connected}
-                                onClick={() => {
-                                  setSelectedServer(s);
-                                  setActiveTab("connect");
-                                }}
+                                onClick={() => pickTargetServer(s)}
                               >
                                 {isCurrentTarget ? "Sélectionné" : "Choisir"}
                               </button>

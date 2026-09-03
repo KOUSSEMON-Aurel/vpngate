@@ -55,10 +55,11 @@ type serveAPI struct {
 	// fetchServers returns the server list to filter; injectable for tests.
 	fetchServers func(opts vpn.ListOptions) ([]vpn.Server, error)
 
-	mu  sync.Mutex
-	sup *supervisor
+	mu      sync.Mutex
+	sup     *supervisor
 	// done is closed when the current supervisor's run loop exits.
-	done chan struct{}
+	done    chan struct{}
+	monitor *vpn.Monitor
 }
 
 // connectRequest is the body of POST /api/connect. hostname and random
@@ -86,6 +87,8 @@ type apiServer struct {
 	Proto        string `json:"proto"`
 	Transport    string `json:"transport,omitempty"`
 	Source       string `json:"source,omitempty"`
+	Health       string `json:"health,omitempty"`
+	LatencyMs    int    `json:"latency_ms,omitempty"`
 }
 
 // statusResponse is what GET /api/status returns: the daemon snapshot
@@ -150,6 +153,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 // desktop app closes the sidecar's stdin pipe.
 func (a *serveAPI) shutdown() {
 	a.mu.Lock()
+	if a.monitor != nil {
+		a.monitor.Stop()
+	}
 	sup, done := a.sup, a.done
 	a.mu.Unlock()
 	if sup == nil {
@@ -163,7 +169,9 @@ func (a *serveAPI) shutdown() {
 	}
 
 	a.mu.Lock()
-	a.sup, a.done = nil, nil
+	if a.sup == sup {
+		a.sup, a.done = nil, nil
+	}
 	a.mu.Unlock()
 	sup.shutdown()
 }
@@ -174,6 +182,7 @@ func (a *serveAPI) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", a.handleHealth)
 	mux.HandleFunc("/api/servers", a.handleServers)
+	mux.HandleFunc("/api/servers/health", a.handleServersHealth)
 	mux.HandleFunc("/api/status", a.handleStatus)
 	mux.HandleFunc("/api/connect", a.handleConnect)
 	mux.HandleFunc("/api/disconnect", a.handleDisconnect)
@@ -204,6 +213,39 @@ func (a *serveAPI) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (a *serveAPI) handleServersHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	a.mu.Lock()
+	mon := a.monitor
+	a.mu.Unlock()
+
+	if mon == nil {
+		writeJSON(w, http.StatusOK, map[string]any{})
+		return
+	}
+	results := mon.Results()
+	out := make(map[string]map[string]any, len(results))
+	for host, res := range results {
+		health := "unknown"
+		switch res.Status {
+		case vpn.ProbeWorking:
+			health = "working"
+		case vpn.ProbeChecking:
+			health = "checking"
+		case vpn.ProbeAuthFailed, vpn.ProbeUnreachable, vpn.ProbeTimeout, vpn.ProbeError:
+			health = "failed"
+		}
+		out[host] = map[string]any{
+			"status":     health,
+			"latency_ms": res.LatencyMs,
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (a *serveAPI) handleServers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
@@ -215,13 +257,35 @@ func (a *serveAPI) handleServers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fetching servers: "+err.Error())
 		return
 	}
+
+	a.mu.Lock()
+	if a.monitor == nil && len(servers) > 0 {
+		a.monitor = vpn.NewMonitor(servers, vpn.MonitorOptions{
+			Concurrency: 8,
+			Interval:    30 * time.Second,
+			Continuous:  true,
+		})
+		a.monitor.Start()
+	}
+	var probeResults map[string]vpn.ProbeResult
+	if a.monitor != nil {
+		probeResults = a.monitor.Results()
+	}
+	a.mu.Unlock()
+
 	minScore, _ := strconv.Atoi(q.Get("min_score"))
 	maxPing, _ := strconv.Atoi(q.Get("max_ping"))
 	servers = filterAPIServers(servers, q.Get("country"), q.Get("proto"), q.Get("transport"), q.Get("source"), minScore, maxPing)
 
 	view := make([]apiServer, 0, len(servers))
 	for _, s := range servers {
-		view = append(view, apiServerView(s))
+		var res *vpn.ProbeResult
+		if probeResults != nil {
+			if r, ok := probeResults[s.HostName]; ok {
+				res = &r
+			}
+		}
+		view = append(view, apiServerView(s, res))
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -343,6 +407,9 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.sup, a.done = sup, done
+	if a.monitor != nil {
+		a.monitor.Pause()
+	}
 	a.mu.Unlock()
 
 	go func() {
@@ -360,6 +427,9 @@ func (a *serveAPI) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	sup, done := a.sup, a.done
+	if a.monitor != nil {
+		a.monitor.Resume()
+	}
 	a.mu.Unlock()
 
 	if sup != nil {
@@ -497,8 +567,8 @@ func filterAPIServers(servers []vpn.Server, country, proto, transport, source st
 	return filtered
 }
 
-func apiServerView(s vpn.Server) apiServer {
-	return apiServer{
+func apiServerView(s vpn.Server, res *vpn.ProbeResult) apiServer {
+	view := apiServer{
 		HostName:     s.HostName,
 		CountryLong:  s.CountryLong,
 		CountryShort: s.CountryShort,
@@ -508,7 +578,22 @@ func apiServerView(s vpn.Server) apiServer {
 		Proto:        s.Proto(),
 		Transport:    s.Transport,
 		Source:       s.Source,
+		Health:       "unknown",
 	}
+	if res != nil {
+		switch res.Status {
+		case vpn.ProbeWorking:
+			view.Health = "working"
+			view.LatencyMs = res.LatencyMs
+		case vpn.ProbeChecking:
+			view.Health = "checking"
+		case vpn.ProbeAuthFailed, vpn.ProbeUnreachable, vpn.ProbeTimeout, vpn.ProbeError:
+			view.Health = "failed"
+		default:
+			view.Health = "unknown"
+		}
+	}
+	return view
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -72,6 +72,50 @@ body {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Health status dots */
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.health-dot.working {
+  background-color: var(--accent-green);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+.health-dot.failed {
+  background-color: var(--accent-red);
+}
+.health-dot.checking {
+  background-color: var(--accent-amber);
+  animation: pulse-dot 1.2s infinite;
+}
+.health-dot.unknown {
+  background-color: var(--text-muted);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+.select-clean {
+  background-color: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 11.5px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.select-clean:focus {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
 /* Main Container */
 .app-shell {
   display: flex;

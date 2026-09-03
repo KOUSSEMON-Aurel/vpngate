@@ -19,6 +19,8 @@ export interface ServerInfo {
   proto: string;
   transport?: string;
   source?: string;
+  health?: "working" | "failed" | "checking" | "unknown";
+  latency_ms?: number;
 }
 
 export interface StatusInfo {
@@ -66,6 +68,10 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return request<ServerInfo[]>(`/api/servers${q ? `?${q}` : ""}`);
   },
+  serversHealth: () =>
+    request<Record<string, { status: "working" | "failed" | "checking" | "unknown"; latency_ms?: number }>>(
+      "/api/servers/health"
+    ),
   status: () => request<StatusInfo>("/api/status"),
   connect: (body: ConnectRequest) =>
     request<{ state: string }>("/api/connect", { method: "POST", body: JSON.stringify(body) }),
