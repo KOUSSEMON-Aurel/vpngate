@@ -17,6 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { api, ServerInfo, StatusInfo } from "./api";
+import { WorldMap } from "./WorldMap";
 
 // Minimalist Gateway Vector Icon
 function GatePortalIcon() {
@@ -485,6 +486,24 @@ export default function App() {
                     : "Votre trafic internet n'est pas protégé sur votre réseau local."}
                 </p>
               </div>
+
+              {/* Interactive World Map */}
+              <WorldMap
+                servers={enrichedServers}
+                selectedCountry={selectedServer?.country_short}
+                connectedCountry={status.country?.slice(0, 2)}
+                isConnected={connected}
+                onSelectCountry={(code) => {
+                  const countryServers = enrichedServers.filter(
+                    (s) => s.country_short.toUpperCase() === code.toUpperCase()
+                  );
+                  if (countryServers.length > 0) {
+                    const working = countryServers.filter((s) => s.health === "working");
+                    const best = (working.length > 0 ? working : countryServers)[0];
+                    pickTargetServer(best);
+                  }
+                }}
+              />
 
               {/* Interactive Location Selector Strip */}
               <div

@@ -222,15 +222,102 @@ body {
 }
 
 /* ========================================================
-   VIEW 1: SEAMLESS CONNECTION SCREEN (NO CLUNKY BOXES)
+   VIEW 1: SEAMLESS CONNECTION SCREEN WITH WORLD MAP
    ======================================================== */
 .connection-flow {
-  max-width: 520px;
-  margin: 20px auto;
+  max-width: 680px;
+  margin: 0 auto;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
+}
+
+/* World Map Visualizer */
+.world-map-wrapper {
+  position: relative;
+  width: 100%;
+  background-color: #0c0e13;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.world-map-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.animated-arc-path {
+  animation: dash-flow 1.4s linear infinite;
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.pulsing-beacon {
+  animation: pulse-ring 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+  transform-origin: center;
+}
+
+@keyframes pulse-ring {
+  0% {
+    r: 6;
+    opacity: 0.9;
+  }
+  100% {
+    r: 16;
+    opacity: 0;
+  }
+}
+
+.pin-center-dot {
+  transition: all 0.15s ease;
+}
+
+.map-pin-group:hover .pin-center-dot {
+  transform: scale(1.3);
+}
+
+.map-legend-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background-color: rgba(12, 14, 19, 0.85);
+  backdrop-filter: blur(8px);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-marker {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.legend-marker.green { background-color: var(--accent-green); }
+.legend-marker.red { background-color: var(--accent-red); }
+
+.legend-item.connected-tag {
+  color: var(--accent-green);
+  font-weight: 600;
 }
 
 /* Hero Typography Display */
