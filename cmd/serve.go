@@ -434,7 +434,18 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 
 	go func() {
-		defer close(done)
+		defer func() {
+			close(done)
+			a.mu.Lock()
+			if a.sup == sup {
+				a.sup, a.done = nil, nil
+			}
+			if a.monitor != nil {
+				a.monitor.Resume()
+			}
+			a.mu.Unlock()
+			sup.shutdown()
+		}()
 		_ = sup.run()
 	}()
 
