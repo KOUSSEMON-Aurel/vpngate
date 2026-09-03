@@ -15,6 +15,7 @@ import {
   Cloud,
   ChevronRight,
   RotateCcw,
+  ShieldAlert,
 } from "lucide-react";
 import { api, ServerInfo, StatusInfo } from "./api";
 import { WorldMap } from "./WorldMap";
@@ -52,6 +53,7 @@ export default function App() {
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [copiedIp, setCopiedIp] = useState(false);
+  const [publicIp, setPublicIp] = useState<string>("");
 
   // Live Health Map (hostname -> { status, latency_ms })
   const [healthMap, setHealthMap] = useState<
@@ -142,6 +144,28 @@ export default function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [connected]);
+
+  // Fetch real public IP when disconnected
+  useEffect(() => {
+    if (backend !== "ok") return;
+    const fetchIp = async () => {
+      try {
+        const res = await api.ip();
+        if (res.ip) setPublicIp(res.ip);
+      } catch {
+        try {
+          const res = await fetch("https://api.ipify.org?format=json");
+          const data = await res.json();
+          if (data.ip) setPublicIp(data.ip);
+        } catch {
+          // ignore
+        }
+      }
+    };
+    void fetchIp();
+    const id = setInterval(fetchIp, 12000);
+    return () => clearInterval(id);
+  }, [backend, connected]);
 
   // Load servers
   const loadServers = useCallback(async () => {
@@ -601,16 +625,42 @@ export default function App() {
                 <div className="telemetry-item-row">
                   <span className="label">Adresse IP</span>
                   <div className="val">
-                    <span>{connected ? status.ip_addr || "—" : "IP opérateur"}</span>
-                    {connected && status.ip_addr && (
-                      <button
-                        className="btn-clean-ghost"
-                        onClick={() => copyIp(status.ip_addr)}
-                        title="Copier l'IP"
-                        style={{ padding: "2px 6px" }}
-                      >
-                        {copiedIp ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
-                      </button>
+                    {connected ? (
+                      <>
+                        <span style={{ color: "var(--accent-green)", fontWeight: 600 }}>{status.ip_addr || "—"}</span>
+                        <span className="clean-spec-tag" style={{ color: "var(--accent-green)", borderColor: "var(--accent-green-border)" }}>
+                          Protégée (VPN)
+                        </span>
+                        {status.ip_addr && (
+                          <button
+                            className="btn-clean-ghost"
+                            onClick={() => copyIp(status.ip_addr)}
+                            title="Copier l'IP"
+                            style={{ padding: "2px 6px" }}
+                          >
+                            {copiedIp ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span>{publicIp || "Détection..."}</span>
+                        {publicIp && (
+                          <span className="clean-spec-tag" style={{ color: "var(--accent-amber)", borderColor: "rgba(245, 158, 11, 0.3)" }}>
+                            Non masquée
+                          </span>
+                        )}
+                        {publicIp && (
+                          <button
+                            className="btn-clean-ghost"
+                            onClick={() => copyIp(publicIp)}
+                            title="Copier l'IP réelle"
+                            style={{ padding: "2px 6px" }}
+                          >
+                            {copiedIp ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -618,8 +668,14 @@ export default function App() {
                 <div className="telemetry-item-row">
                   <span className="label">Durée de session</span>
                   <span className="val">
-                    <Clock size={12} color="var(--text-tertiary)" />
-                    {connected ? duration : "00:00:00"}
+                    {connected ? (
+                      <>
+                        <Clock size={12} color="var(--accent-green)" />
+                        <span style={{ color: "#fff", fontWeight: 600 }}>{duration}</span>
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-tertiary)" }}>Non connecté (Chronomètre arrêté)</span>
+                    )}
                   </span>
                 </div>
 
@@ -627,18 +683,27 @@ export default function App() {
                   <span className="label">Protocole</span>
                   <span className="val">
                     {connected
-                      ? status.protocol || "OpenVPN (tun0)"
+                      ? status.protocol || "OpenVPN (tun0 • Chiffré)"
                       : selectedServer
                       ? `${selectedServer.proto.toUpperCase()} ${selectedServer.transport || ""}`
-                      : "OpenVPN (Auto)"}
+                      : "OpenVPN (Sélection automatique)"}
                   </span>
                 </div>
 
                 <div className="telemetry-item-row">
-                  <span className="label">Sécurité réseau</span>
-                  <span className="val" style={{ color: "var(--accent-green)" }}>
-                    <Lock size={12} />
-                    Fuites IPv6 et DNS isolées
+                  <span className="label">Protection réseau</span>
+                  <span className="val">
+                    {connected ? (
+                      <span style={{ color: "var(--accent-green)", display: "flex", alignItems: "center", gap: "5px" }}>
+                        <Lock size={12} />
+                        Actif • Fuites IPv6 & DNS isolées
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--accent-amber)", display: "flex", alignItems: "center", gap: "5px" }}>
+                        <ShieldAlert size={12} />
+                        Inactif • Trafic réseau non chiffré
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>

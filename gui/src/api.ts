@@ -64,6 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ ok: boolean }>("/api/health"),
+  ip: () => request<{ ip: string }>("/api/ip"),
   servers: (params: Record<string, string> = {}) => {
     const q = new URLSearchParams(params).toString();
     return request<ServerInfo[]>(`/api/servers${q ? `?${q}` : ""}`);

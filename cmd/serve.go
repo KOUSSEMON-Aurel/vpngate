@@ -181,6 +181,7 @@ func (a *serveAPI) shutdown() {
 func (a *serveAPI) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", a.handleHealth)
+	mux.HandleFunc("/api/ip", a.handleIP)
 	mux.HandleFunc("/api/servers", a.handleServers)
 	mux.HandleFunc("/api/servers/health", a.handleServersHealth)
 	mux.HandleFunc("/api/status", a.handleStatus)
@@ -211,6 +212,26 @@ func (a *serveAPI) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *serveAPI) handleIP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://api.ipify.org?format=json")
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "unable to fetch public IP: "+err.Error())
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (a *serveAPI) handleServersHealth(w http.ResponseWriter, r *http.Request) {
