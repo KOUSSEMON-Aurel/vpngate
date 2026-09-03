@@ -84,6 +84,10 @@ var connectCmd = &cobra.Command{
 			return runSupervisor()
 		}
 
+		if state, err := daemon.Load(); err == nil && daemon.IsAlive(state.PID) {
+			return fmt.Errorf("already connected to %s (PID %d) in background; run 'vpngate disconnect' first", state.HostName, state.PID)
+		}
+
 		if err := validateProtoFlag(); err != nil {
 			return err
 		}

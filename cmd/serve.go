@@ -235,16 +235,37 @@ func (a *serveAPI) handleStatus(w http.ResponseWriter, r *http.Request) {
 	sup := a.sup
 	a.mu.Unlock()
 
-	if sup == nil {
-		writeJSON(w, http.StatusOK, statusResponse{Snapshot: daemon.Snapshot{State: "DISCONNECTED"}})
+	if sup != nil {
+		snap, err := sup.handleStatus()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap, Protocol: sup.protocol, Transport: sup.transport})
 		return
 	}
-	snap, err := sup.handleStatus()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+
+	state, err := daemon.Load()
+	if err == nil && daemon.IsAlive(state.PID) {
+		snap, err := daemon.SendStatus(state.ControlAddr, 2*time.Second)
+		if err == nil {
+			writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap})
+			return
+		}
+		writeJSON(w, http.StatusOK, statusResponse{
+			Snapshot: daemon.Snapshot{
+				State:       "CONNECTED",
+				HostName:    state.HostName,
+				IPAddr:      state.IPAddr,
+				CountryLong: state.CountryLong,
+				StartedAt:   state.StartedAt,
+				PID:         state.PID,
+			},
+		})
 		return
 	}
-	writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap, Protocol: sup.protocol, Transport: sup.transport})
+
+	writeJSON(w, http.StatusOK, statusResponse{Snapshot: daemon.Snapshot{State: "DISCONNECTED"}})
 }
 
 func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
@@ -261,6 +282,11 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	busy := a.sup != nil
 	a.mu.Unlock()
+	if !busy {
+		if state, err := daemon.Load(); err == nil && daemon.IsAlive(state.PID) {
+			busy = true
+		}
+	}
 	if busy {
 		writeError(w, http.StatusConflict, "a connection is already running; disconnect first")
 		return
@@ -336,25 +362,37 @@ func (a *serveAPI) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 	sup, done := a.sup, a.done
 	a.mu.Unlock()
 
-	if sup == nil {
-		writeError(w, http.StatusNotFound, "no connection to stop")
+	if sup != nil {
+		sup.handleStop()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			writeError(w, http.StatusGatewayTimeout, "tunnel did not stop in time")
+			return
+		}
+
+		a.mu.Lock()
+		if a.sup == sup {
+			a.sup, a.done = nil, nil
+		}
+		a.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]string{"state": "DISCONNECTED"})
 		return
 	}
 
-	sup.handleStop()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		writeError(w, http.StatusGatewayTimeout, "tunnel did not stop in time")
+	state, err := daemon.Load()
+	if err == nil && daemon.IsAlive(state.PID) {
+		if err := daemon.SendStop(state.ControlAddr, 5*time.Second); err != nil {
+			if proc, ferr := os.FindProcess(state.PID); ferr == nil {
+				_ = proc.Kill()
+			}
+			_ = daemon.Remove()
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"state": "DISCONNECTED"})
 		return
 	}
 
-	a.mu.Lock()
-	if a.sup == sup {
-		a.sup, a.done = nil, nil
-	}
-	a.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]string{"state": "DISCONNECTED"})
+	writeError(w, http.StatusNotFound, "no connection to stop")
 }
 
 func (a *serveAPI) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -379,13 +417,15 @@ func (a *serveAPI) handleLogs(w http.ResponseWriter, r *http.Request) {
 // status`/`disconnect` keep working while the GUI is connected) and wires
 // the same status/stop handlers the daemon re-exec path uses.
 func newServeSupervisor(servers []vpn.Server, initial vpn.Server, protocol, transport string, random, reconnect bool) (*supervisor, error) {
-	if err := os.MkdirAll(daemon.Dir(), 0o700); err != nil {
+	if err := os.MkdirAll(daemon.Dir(), 0o755); err != nil {
 		return nil, err
 	}
+	_ = os.Chmod(daemon.Dir(), 0o755)
 	logFile, err := os.OpenFile(daemon.LogPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, err
 	}
+	_ = os.Chmod(daemon.LogPath(), 0o644)
 	controlLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		_ = logFile.Close()

@@ -20,14 +20,19 @@ type State struct {
 
 // Save writes state to StatePath(), creating Dir() if needed.
 func Save(state State) error {
-	if err := os.MkdirAll(Dir(), 0o700); err != nil {
+	if err := os.MkdirAll(Dir(), 0o755); err != nil {
 		return err
 	}
+	_ = os.Chmod(Dir(), 0o755)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(StatePath(), data, 0o600)
+	if err := os.WriteFile(StatePath(), data, 0o644); err != nil {
+		return err
+	}
+	_ = os.Chmod(StatePath(), 0o644)
+	return nil
 }
 
 // Load reads and parses StatePath(). Callers should check

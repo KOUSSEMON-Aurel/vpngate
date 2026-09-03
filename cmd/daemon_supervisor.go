@@ -81,13 +81,15 @@ func runSupervisor() error {
 		}
 	}
 
-	if err := os.MkdirAll(daemon.Dir(), 0o700); err != nil {
+	if err := os.MkdirAll(daemon.Dir(), 0o755); err != nil {
 		return err
 	}
+	_ = os.Chmod(daemon.Dir(), 0o755)
 	logFile, err := os.OpenFile(daemon.LogPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
+	_ = os.Chmod(daemon.LogPath(), 0o644)
 	defer func() { _ = logFile.Close() }()
 
 	// The supervisor is a detached, re-exec'd child: nothing connects its
