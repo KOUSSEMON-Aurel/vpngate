@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Shield,
   Zap,
   Globe,
   Terminal,
@@ -8,9 +7,6 @@ import {
   RefreshCw,
   Copy,
   Check,
-  ChevronDown,
-  ChevronRight,
-  ChevronRight as ArrowRight,
   Search,
   Wifi,
   Lock,
@@ -18,8 +14,29 @@ import {
   Power,
   Dices,
   Cloud,
+  ChevronRight,
 } from "lucide-react";
 import { api, ServerInfo, StatusInfo } from "./api";
+
+// Custom Geometric Gateway Portal Icon (No generic shield)
+function GatePortalIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 20V9a8 8 0 0 1 16 0v11" />
+      <path d="M9 20v-6a3 3 0 0 1 6 0v6" />
+      <circle cx="12" cy="6.5" r="1.2" fill="currentColor" />
+    </svg>
+  );
+}
 
 function getCountryFlag(code?: string): string {
   if (!code || code.length !== 2) return "🌐";
@@ -43,13 +60,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [copiedIp, setCopiedIp] = useState(false);
 
-  // Selected server to connect
+  // Selected Target Relay
   const [selectedServer, setSelectedServer] = useState<ServerInfo | null>(null);
 
-  // Servers Tab State
+  // Master-Detail State in Servers Tab
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string>("");
 
   // Live Timer
   const [duration, setDuration] = useState("00:00:00");
@@ -58,7 +75,7 @@ export default function App() {
   const connected = status.state === "CONNECTED";
   const connecting = status.state === "CONNECTING";
 
-  // Backend Health & Status Polling
+  // Polling backend status & health
   useEffect(() => {
     const tick = async () => {
       try {
@@ -78,7 +95,7 @@ export default function App() {
           setDuration("00:00:00");
         }
       } catch {
-        // ignore network hiccups
+        // ignore
       }
     };
     void tick();
@@ -86,7 +103,7 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Duration Timer
+  // Duration clock
   useEffect(() => {
     if (!connected || !startTimerRef.current) return;
     const interval = setInterval(() => {
@@ -100,16 +117,16 @@ export default function App() {
     return () => clearInterval(interval);
   }, [connected]);
 
-  // Load Servers
+  // Load server list
   const loadServers = useCallback(async () => {
     try {
       setError("");
       const list = await api.servers();
       setServers(list);
       if (!selectedServer && list.length > 0) {
-        // Default to the fastest server
         const sorted = [...list].sort((a, b) => parsePing(a.ping) - parsePing(b.ping));
         setSelectedServer(sorted[0]);
+        setSelectedCountryCode(sorted[0].country_short.toUpperCase());
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -120,7 +137,7 @@ export default function App() {
     if (backend === "ok") void loadServers();
   }, [backend, loadServers]);
 
-  // Handle Connect & Disconnect
+  // Connect & Disconnect
   const handleConnect = useCallback(
     async (target?: ServerInfo, options: { random?: boolean; source?: string } = {}) => {
       setBusy(true);
@@ -166,7 +183,7 @@ export default function App() {
     }
   }, []);
 
-  // Group servers by country
+  // Group servers by country for Master-Detail view
   const countryGroups = useMemo(() => {
     let list = servers;
     if (sourceFilter !== "all") {
@@ -210,9 +227,16 @@ export default function App() {
       }
     }
 
-    // Sort countries by server count or lowest ping
     return Array.from(map.values()).sort((a, b) => a.country_long.localeCompare(b.country_long));
   }, [servers, sourceFilter, search]);
+
+  // Currently active country in detail pane
+  const activeCountry = useMemo(() => {
+    if (!selectedCountryCode && countryGroups.length > 0) {
+      return countryGroups[0];
+    }
+    return countryGroups.find((g) => g.country_short.toUpperCase() === selectedCountryCode) || countryGroups[0];
+  }, [countryGroups, selectedCountryCode]);
 
   const copyIp = (ip?: string) => {
     if (!ip) return;
@@ -222,83 +246,83 @@ export default function App() {
   };
 
   return (
-    <div className="app-container">
-      {/* Sidebar Navigation */}
-      <aside className="app-sidebar">
+    <div className="app-shell">
+      {/* Left Navigation Rail */}
+      <aside className="nav-rail">
         <div>
-          <div className="brand-header">
-            <div className="brand-icon-box">
-              <Shield size={18} strokeWidth={2.5} />
+          <div className="brand-row">
+            <div className="brand-portal-icon">
+              <GatePortalIcon />
             </div>
-            <div>
-              <div className="brand-title">vpngate</div>
-              <div className="brand-edition">client sécurisé</div>
+            <div className="brand-meta">
+              <span className="brand-name">vpngate</span>
+              <span className="brand-tag">sécurisé & libre</span>
             </div>
           </div>
 
-          <nav className="nav-group">
+          <nav className="nav-menu">
             <button
-              className={`nav-button ${activeTab === "connect" ? "active" : ""}`}
+              className={`nav-link ${activeTab === "connect" ? "active" : ""}`}
               onClick={() => setActiveTab("connect")}
             >
-              <Zap size={16} />
+              <Zap size={15} />
               <span>Connexion</span>
             </button>
             <button
-              className={`nav-button ${activeTab === "servers" ? "active" : ""}`}
+              className={`nav-link ${activeTab === "servers" ? "active" : ""}`}
               onClick={() => setActiveTab("servers")}
             >
-              <Globe size={16} />
+              <Globe size={15} />
               <span>Emplacements</span>
             </button>
             <button
-              className={`nav-button ${activeTab === "logs" ? "active" : ""}`}
+              className={`nav-link ${activeTab === "logs" ? "active" : ""}`}
               onClick={() => setActiveTab("logs")}
             >
-              <Terminal size={16} />
+              <Terminal size={15} />
               <span>Journal</span>
             </button>
             <button
-              className={`nav-button ${activeTab === "settings" ? "active" : ""}`}
+              className={`nav-link ${activeTab === "settings" ? "active" : ""}`}
               onClick={() => setActiveTab("settings")}
             >
-              <Settings size={16} />
+              <Settings size={15} />
               <span>Paramètres</span>
             </button>
           </nav>
         </div>
 
-        <div className="sidebar-footer-info">
+        <div className="rail-footer">
           <span style={{ display: "flex", alignItems: "center" }}>
             <span
-              className={`status-bullet ${
-                connected ? "green" : connecting ? "amber" : "gray"
+              className={`status-dot-mini ${
+                connected ? "active" : connecting ? "pending" : "idle"
               }`}
             />
-            {connected ? "Tunnel actif" : connecting ? "Négociation..." : "Inactif"}
+            {connected ? "Tunnel actif" : connecting ? "Négociation" : "Inactif"}
           </span>
           <span>{servers.length} relais</span>
         </div>
       </aside>
 
-      {/* Main Area */}
-      <main className="app-content">
-        <header className="top-navbar">
-          <div className="page-heading">
-            {activeTab === "connect" && "Connexion VPN"}
-            {activeTab === "servers" && "Sélection de l'emplacement"}
-            {activeTab === "logs" && "Journal d'activité"}
-            {activeTab === "settings" && "Paramètres de sécurité"}
-          </div>
+      {/* Main Stage */}
+      <main className="app-stage">
+        <header className="stage-header">
+          <span className="stage-title">
+            {activeTab === "connect" && "Tableau de bord"}
+            {activeTab === "servers" && "Sélection d'emplacement"}
+            {activeTab === "logs" && "Journal d'activité du tunnel"}
+            {activeTab === "settings" && "Paramètres et sécurité"}
+          </span>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
-              className="btn-icon-subtle"
+              className="btn-clean-ghost"
               onClick={() => void loadServers()}
-              title="Actualiser la liste"
               disabled={busy}
+              title="Recharger la liste des serveurs"
             >
-              <RefreshCw size={13} />
+              <RefreshCw size={12} />
               <span>Actualiser</span>
             </button>
           </div>
@@ -307,11 +331,11 @@ export default function App() {
         {error && (
           <div
             style={{
-              margin: "16px 28px 0",
-              padding: "10px 16px",
-              backgroundColor: "rgba(239, 68, 68, 0.12)",
+              margin: "16px 24px 0",
+              padding: "10px 14px",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
               border: "1px solid rgba(239, 68, 68, 0.25)",
-              borderRadius: "8px",
+              borderRadius: "6px",
               color: "#fca5a5",
               fontSize: "12.5px",
             }}
@@ -320,93 +344,93 @@ export default function App() {
           </div>
         )}
 
-        <div className="page-body">
+        <div className="stage-content">
           {/* ========================================================
               TAB: CONNECTION
               ======================================================== */}
           {activeTab === "connect" && (
-            <div className="connection-view">
-              {/* Main Status & Connect Card */}
-              <div className="connection-hero-card">
-                <div className="hero-status-row">
+            <div className="connection-panel">
+              {/* Main Status & Connect Box */}
+              <div className="status-banner-card">
+                <div className="banner-top-row">
                   <div>
-                    <div style={{ fontSize: "18px", fontWeight: 700, color: "#fff" }}>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: "#fff" }}>
                       {connected
                         ? `Connecté à ${status.country || "Relais distant"}`
                         : connecting
-                        ? "Connexion en cours..."
+                        ? "Sécurisation en cours..."
                         : "Non connecté"}
                     </div>
-                    <div style={{ fontSize: "12.5px", color: "var(--text-muted)", marginTop: "2px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--text-tertiary)", marginTop: "2px" }}>
                       {connected
-                        ? "Tout votre trafic est chiffré via le tunnel OpenVPN"
+                        ? "Tout votre trafic passe par le tunnel chiffré"
                         : "Votre trafic internet n'est pas protégé"}
                     </div>
                   </div>
 
                   <div
-                    className={`status-badge-clean ${
+                    className={`status-badge-chip ${
                       connected ? "connected" : connecting ? "connecting" : ""
                     }`}
                   >
                     <span
-                      className={`status-bullet ${
-                        connected ? "green" : connecting ? "amber" : "gray"
+                      className={`status-dot-mini ${
+                        connected ? "active" : connecting ? "pending" : "idle"
                       }`}
                     />
-                    <span>{connected ? "Protégé" : connecting ? "Sécurisation" : "Déconnecté"}</span>
+                    <span>{connected ? "Protégé" : connecting ? "Connexion" : "Déconnecté"}</span>
                   </div>
                 </div>
 
-                {/* Target Location Card */}
+                {/* Selected Relay Card */}
                 <div
-                  className="location-selector-box"
+                  className="target-relay-card"
                   onClick={() => setActiveTab("servers")}
-                  title="Cliquer pour changer d'emplacement"
+                  title="Changer d'emplacement"
                 >
-                  <div className="location-left-info">
-                    <span className="location-flag-badge">
+                  <div className="relay-country-group">
+                    <span className="country-flag-display">
                       {getCountryFlag(
                         connected
                           ? status.country?.slice(0, 2)
                           : selectedServer?.country_short
                       )}
                     </span>
-                    <div className="location-text-group">
-                      <span className="location-country-name">
+                    <div className="relay-location-details">
+                      <span className="relay-country-heading">
                         {connected
                           ? status.country || "Japon"
                           : selectedServer
                           ? selectedServer.country_long
                           : "Choisir un pays"}
                       </span>
-                      <span className="location-server-name">
+                      <span className="relay-server-subtext">
                         {connected
                           ? status.hostname || status.ip_addr
                           : selectedServer
                           ? `${selectedServer.hostname} • ${selectedServer.ip}`
-                          : "Aucun relais sélectionné"}
+                          : "Cliquer pour parcourir les emplacements"}
                       </span>
                     </div>
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     {!connected && selectedServer && (
-                      <div className="location-latency-tag">
-                        <Wifi size={13} color="var(--accent-green)" />
+                      <div className="relay-latency-pill">
+                        <Wifi size={12} />
                         <span>{selectedServer.ping}</span>
                       </div>
                     )}
                     <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                       Modifier
                     </span>
-                    <ArrowRight size={14} color="var(--text-muted)" />
+                    <ChevronRight size={14} color="var(--text-muted)" />
                   </div>
                 </div>
 
-                {/* Action Button */}
+                {/* Connect / Disconnect Action */}
                 <button
-                  className={`btn-primary-connect ${
+                  className={`btn-connect-solid ${
                     connected ? "connected" : connecting ? "connecting" : ""
                   }`}
                   disabled={busy || backend !== "ok"}
@@ -418,7 +442,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <Power size={16} />
+                  <Power size={15} />
                   <span>
                     {connected
                       ? "Déconnecter"
@@ -429,17 +453,18 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Stats Grid */}
-              <div className="details-grid">
-                <div className="details-tile">
-                  <span className="details-tile-label">Adresse IP assignée</span>
-                  <div className="details-tile-value">
+              {/* Metrics Grid */}
+              <div className="metrics-row">
+                <div className="metric-box">
+                  <span className="metric-label">Adresse IP publique</span>
+                  <div className="metric-value">
                     <span>{connected ? status.ip_addr || "—" : "IP opérateur"}</span>
                     {connected && status.ip_addr && (
                       <button
-                        className="btn-icon-subtle"
+                        className="btn-clean-ghost"
                         onClick={() => copyIp(status.ip_addr)}
                         title="Copier l'IP"
+                        style={{ padding: "3px 6px" }}
                       >
                         {copiedIp ? <Check size={12} color="var(--accent-green)" /> : <Copy size={12} />}
                       </button>
@@ -447,19 +472,19 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="details-tile">
-                  <span className="details-tile-label">Temps de connexion</span>
-                  <div className="details-tile-value">
+                <div className="metric-box">
+                  <span className="metric-label">Durée de session</span>
+                  <div className="metric-value">
                     <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <Clock size={13} color="var(--accent-blue)" />
+                      <Clock size={13} color="var(--text-tertiary)" />
                       {connected ? duration : "00:00:00"}
                     </span>
                   </div>
                 </div>
 
-                <div className="details-tile">
-                  <span className="details-tile-label">Protocole</span>
-                  <div className="details-tile-value">
+                <div className="metric-box">
+                  <span className="metric-label">Protocole & Port</span>
+                  <div className="metric-value">
                     <span>
                       {connected
                         ? status.protocol || "OpenVPN (tun0)"
@@ -470,21 +495,21 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="details-tile">
-                  <span className="details-tile-label">Protection fuites</span>
-                  <div className="details-tile-value">
+                <div className="metric-box">
+                  <span className="metric-label">Fuites DNS & IPv6</span>
+                  <div className="metric-value">
                     <span style={{ color: "var(--accent-green)", display: "flex", alignItems: "center", gap: "6px" }}>
-                      <Lock size={13} />
-                      IPv6 & DNS isolés
+                      <Lock size={12} />
+                      Bloquées
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Quick Options Strip */}
-              <div className="shortcuts-strip">
+              {/* Quick Options */}
+              <div className="shortcuts-grid">
                 <button
-                  className="shortcut-tile-btn"
+                  className="shortcut-btn"
                   disabled={busy || connected}
                   onClick={() => {
                     if (servers.length > 0) {
@@ -493,34 +518,34 @@ export default function App() {
                     }
                   }}
                 >
-                  <Zap size={18} color="var(--accent-green)" />
+                  <Zap size={15} color="var(--accent-green)" />
                   <div>
-                    <div className="shortcut-tile-title">Plus rapide</div>
-                    <div className="shortcut-tile-desc">Ping le plus bas</div>
+                    <div style={{ color: "#fff" }}>Plus rapide</div>
+                    <div style={{ fontSize: "10.5px", color: "var(--text-tertiary)" }}>Ping le plus bas</div>
                   </div>
                 </button>
 
                 <button
-                  className="shortcut-tile-btn"
+                  className="shortcut-btn"
                   disabled={busy || connected}
                   onClick={() => void handleConnect(undefined, { random: true })}
                 >
-                  <Dices size={18} color="var(--accent-blue)" />
+                  <Dices size={15} color="var(--accent-blue)" />
                   <div>
-                    <div className="shortcut-tile-title">Aléatoire</div>
-                    <div className="shortcut-tile-desc">N'importe quel pays</div>
+                    <div style={{ color: "#fff" }}>Aléatoire</div>
+                    <div style={{ fontSize: "10.5px", color: "var(--text-tertiary)" }}>N'importe où</div>
                   </div>
                 </button>
 
                 <button
-                  className="shortcut-tile-btn"
+                  className="shortcut-btn"
                   disabled={busy || connected}
                   onClick={() => void handleConnect(undefined, { source: "warp" })}
                 >
-                  <Cloud size={18} color="var(--accent-amber)" />
+                  <Cloud size={15} color="var(--accent-amber)" />
                   <div>
-                    <div className="shortcut-tile-title">Cloudflare WARP</div>
-                    <div className="shortcut-tile-desc">WireGuard 1.1.1.1</div>
+                    <div style={{ color: "#fff" }}>Cloudflare WARP</div>
+                    <div style={{ fontSize: "10.5px", color: "var(--text-tertiary)" }}>WireGuard 1.1.1.1</div>
                   </div>
                 </button>
               </div>
@@ -528,153 +553,172 @@ export default function App() {
           )}
 
           {/* ========================================================
-              TAB: SERVERS (GROUPED ACCORDION)
+              TAB: SERVERS (MASTER-DETAIL PANE)
               ======================================================== */}
           {activeTab === "servers" && (
-            <div className="servers-view-container">
-              {/* Search & Filter Bar */}
-              <div className="servers-search-bar">
-                <Search size={16} color="var(--text-muted)" />
-                <input
-                  type="text"
-                  placeholder="Rechercher un pays, une IP ou un serveur..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                {search && (
-                  <button
-                    className="btn-icon-subtle"
-                    onClick={() => setSearch("")}
-                    style={{ border: "none" }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-
-              <div className="chips-filter-row">
-                <button
-                  className={`filter-chip ${sourceFilter === "all" ? "active" : ""}`}
-                  onClick={() => setSourceFilter("all")}
-                >
-                  Tous ({servers.length})
-                </button>
-                <button
-                  className={`filter-chip ${sourceFilter === "vpngate" ? "active" : ""}`}
-                  onClick={() => setSourceFilter("vpngate")}
-                >
-                  VPN Gate
-                </button>
-                <button
-                  className={`filter-chip ${sourceFilter === "vpnbook" ? "active" : ""}`}
-                  onClick={() => setSourceFilter("vpnbook")}
-                >
-                  VPNBook
-                </button>
-                <button
-                  className={`filter-chip ${sourceFilter === "warp" ? "active" : ""}`}
-                  onClick={() => setSourceFilter("warp")}
-                >
-                  Cloudflare WARP
-                </button>
-              </div>
-
-              {/* Accordion Country List */}
-              <div className="countries-list">
-                {countryGroups.map((group) => {
-                  const isExpanded = expandedCountry === group.country_short;
-                  const isCurrentCountry =
-                    connected && status.country?.includes(group.country_long);
-
-                  return (
-                    <div key={group.country_short} className="country-accordion-card">
-                      <div
-                        className="country-summary-row"
-                        onClick={() =>
-                          setExpandedCountry(isExpanded ? null : group.country_short)
-                        }
+            <div className="master-detail-container">
+              {/* Left Pane: Country List */}
+              <div className="master-countries-pane">
+                <div className="pane-search-header">
+                  <div className="clean-search-input">
+                    <Search size={14} color="var(--text-tertiary)" />
+                    <input
+                      type="text"
+                      placeholder="Filtrer par pays, IP..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {search && (
+                      <span
+                        style={{ cursor: "pointer", color: "var(--text-tertiary)" }}
+                        onClick={() => setSearch("")}
                       >
-                        <div className="country-meta-left">
-                          <span className="country-flag-icon">
+                        ✕
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="pane-chips-row">
+                    <button
+                      className={`pane-chip-filter ${sourceFilter === "all" ? "active" : ""}`}
+                      onClick={() => setSourceFilter("all")}
+                    >
+                      Tous
+                    </button>
+                    <button
+                      className={`pane-chip-filter ${sourceFilter === "vpngate" ? "active" : ""}`}
+                      onClick={() => setSourceFilter("vpngate")}
+                    >
+                      VPN Gate
+                    </button>
+                    <button
+                      className={`pane-chip-filter ${sourceFilter === "vpnbook" ? "active" : ""}`}
+                      onClick={() => setSourceFilter("vpnbook")}
+                    >
+                      VPNBook
+                    </button>
+                    <button
+                      className={`pane-chip-filter ${sourceFilter === "warp" ? "active" : ""}`}
+                      onClick={() => setSourceFilter("warp")}
+                    >
+                      WARP
+                    </button>
+                  </div>
+                </div>
+
+                <div className="countries-scroll-list">
+                  {countryGroups.map((group) => {
+                    const isSelected = activeCountry?.country_short === group.country_short;
+                    return (
+                      <div
+                        key={group.country_short}
+                        className={`country-item-row ${isSelected ? "selected" : ""}`}
+                        onClick={() => setSelectedCountryCode(group.country_short.toUpperCase())}
+                      >
+                        <div className="country-left-meta">
+                          <span style={{ fontSize: "20px", lineHeight: 1 }}>
                             {getCountryFlag(group.country_short)}
                           </span>
                           <div>
-                            <span className="country-title-text">{group.country_long}</span>
-                            <span className="country-count-tag">
-                              {group.servers.length} relais
-                            </span>
+                            <span className="country-name-txt">{group.country_long}</span>
+                            <span className="country-servers-count">({group.servers.length})</span>
                           </div>
                         </div>
 
-                        <div className="country-summary-actions">
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--text-secondary)", fontFamily: "monospace" }}>
-                            <Wifi size={12} color="var(--accent-green)" />
-                            <span>{group.bestPing < 9000 ? `${group.bestPing} ms` : "—"}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--accent-green)", fontFamily: "monospace" }}>
+                          <span>{group.bestPing < 9000 ? `${group.bestPing}ms` : "—"}</span>
+                          <ChevronRight size={13} color="var(--text-muted)" />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {countryGroups.length === 0 && (
+                    <div style={{ padding: "20px", textAlign: "center", color: "var(--text-tertiary)" }}>
+                      Aucun emplacement trouvé.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Pane: Relays in Selected Country */}
+              <div className="detail-relays-pane">
+                {activeCountry ? (
+                  <>
+                    <div className="detail-pane-header">
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ fontSize: "24px", lineHeight: 1 }}>
+                          {getCountryFlag(activeCountry.country_short)}
+                        </span>
+                        <div>
+                          <div style={{ fontSize: "15px", fontWeight: 700, color: "#fff" }}>
+                            {activeCountry.country_long}
                           </div>
-
-                          <button
-                            className="btn-fast-connect"
-                            disabled={busy || connected}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const best = [...group.servers].sort(
-                                (a, b) => parsePing(a.ping) - parsePing(b.ping)
-                              )[0];
-                              setSelectedServer(best);
-                              setActiveTab("connect");
-                            }}
-                          >
-                            {isCurrentCountry ? "Actif" : "Choisir"}
-                          </button>
-
-                          {isExpanded ? (
-                            <ChevronDown size={16} color="var(--text-muted)" />
-                          ) : (
-                            <ChevronRight size={16} color="var(--text-muted)" />
-                          )}
+                          <div style={{ fontSize: "11.5px", color: "var(--text-tertiary)" }}>
+                            {activeCountry.servers.length} relais disponibles
+                          </div>
                         </div>
                       </div>
 
-                      {/* Expanded Sublist of Relays */}
-                      {isExpanded && (
-                        <div className="country-relays-sublist">
-                          {group.servers.map((s) => (
-                            <div key={s.hostname} className="relay-subrow">
-                              <div className="relay-name-col">
-                                <span className="relay-hostname-text">{s.hostname}</span>
-                                <span className="relay-ip-text">{s.ip}</span>
-                              </div>
-
-                              <div className="relay-specs-col">
-                                <span className="spec-pill-compact">{s.proto}</span>
-                                {s.transport && (
-                                  <span className="spec-pill-compact">{s.transport}</span>
-                                )}
-                                <span style={{ fontSize: "11.5px", fontFamily: "monospace", color: "var(--text-secondary)", minWidth: "50px", textAlign: "right" }}>
-                                  {s.ping}
-                                </span>
-                                <button
-                                  className="btn-fast-connect"
-                                  disabled={busy || connected}
-                                  onClick={() => {
-                                    setSelectedServer(s);
-                                    setActiveTab("connect");
-                                  }}
-                                >
-                                  Sélectionner
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <button
+                        className="btn-select-relay"
+                        disabled={busy || connected}
+                        onClick={() => {
+                          const best = [...activeCountry.servers].sort(
+                            (a, b) => parsePing(a.ping) - parsePing(b.ping)
+                          )[0];
+                          setSelectedServer(best);
+                          setActiveTab("connect");
+                        }}
+                      >
+                        Choisir le plus rapide
+                      </button>
                     </div>
-                  );
-                })}
 
-                {countryGroups.length === 0 && (
-                  <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted)" }}>
-                    Aucun emplacement ne correspond à votre recherche.
+                    <div className="relays-scroll-list">
+                      {activeCountry.servers.map((s) => {
+                        const isCurrentTarget = selectedServer?.hostname === s.hostname;
+                        return (
+                          <div key={s.hostname} className="relay-card-row">
+                            <div className="relay-info-cluster">
+                              <span className="relay-hostname-bold">{s.hostname}</span>
+                              <span className="relay-ip-sub">{s.ip}</span>
+                            </div>
+
+                            <div className="relay-tags-cluster">
+                              <span className="clean-spec-tag">{s.proto}</span>
+                              {s.transport && <span className="clean-spec-tag">{s.transport}</span>}
+                              <span
+                                style={{
+                                  fontSize: "11.5px",
+                                  fontFamily: "JetBrains Mono, monospace",
+                                  color: "var(--accent-green)",
+                                  minWidth: "48px",
+                                  textAlign: "right",
+                                }}
+                              >
+                                {s.ping}
+                              </span>
+
+                              <button
+                                className="btn-select-relay"
+                                disabled={busy || connected}
+                                onClick={() => {
+                                  setSelectedServer(s);
+                                  setActiveTab("connect");
+                                }}
+                              >
+                                {isCurrentTarget ? "Sélectionné" : "Choisir"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ padding: "40px", textAlign: "center", color: "var(--text-tertiary)" }}>
+                    Sélectionnez un pays à gauche pour voir ses relais.
                   </div>
                 )}
               </div>
@@ -684,67 +728,67 @@ export default function App() {
           {/* ========================================================
               TAB: LOGS
               ======================================================== */}
-          {activeTab === "logs" && <TerminalLogs backend={backend} />}
+          {activeTab === "logs" && <TerminalLogsView backend={backend} />}
 
           {/* ========================================================
               TAB: SETTINGS
               ======================================================== */}
           {activeTab === "settings" && (
-            <div style={{ maxWidth: "600px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: "var(--radius-lg)", padding: "20px" }}>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#fff", marginBottom: "14px" }}>
-                  Sécurité réseau
+            <div style={{ maxWidth: "560px", margin: "0 auto", width: "100%", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div style={{ backgroundColor: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "18px 20px" }}>
+                <h3 style={{ fontSize: "13.5px", fontWeight: 600, color: "#fff", marginBottom: "12px" }}>
+                  Sécurité et isolation réseau
                 </h3>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                   <div>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-main)" }}>
-                      Blocage du trafic IPv6
+                    <div style={{ fontSize: "12.5px", fontWeight: 500, color: "var(--text-primary)" }}>
+                      Blocage des fuites IPv6
                     </div>
-                    <div style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
-                      Empêche les fuites d'adresse via IPv6 pendant la navigation
+                    <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+                      Désactive le trafic IPv6 non chiffré sur l'interface
                     </div>
                   </div>
-                  <span style={{ fontSize: "12px", color: "var(--accent-green)", fontWeight: 600 }}>
+                  <span style={{ fontSize: "11.5px", color: "var(--accent-green)", fontWeight: 600 }}>
                     Actif
                   </span>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                   <div>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-main)" }}>
-                      Routage DNS exclusif
+                    <div style={{ fontSize: "12.5px", fontWeight: 500, color: "var(--text-primary)" }}>
+                      DNS Tunnel Exclusif
                     </div>
-                    <div style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
-                      Force toutes les requêtes DNS à passer par le relais VPN
+                    <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+                      Empêche votre FAI d'observer vos résolutions de noms
                     </div>
                   </div>
-                  <span style={{ fontSize: "12px", color: "var(--accent-green)", fontWeight: 600 }}>
+                  <span style={{ fontSize: "11.5px", color: "var(--accent-green)", fontWeight: 600 }}>
                     Actif
                   </span>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
                   <div>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-main)" }}>
-                      Daemon de fond unifié
+                    <div style={{ fontSize: "12.5px", fontWeight: 500, color: "var(--text-primary)" }}>
+                      Daemon de contrôle unifié
                     </div>
-                    <div style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
-                      Partagé avec les commandes CLI et TUI dans /var/run/vpngate
+                    <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+                      Partage automatique de l'état avec la CLI et la TUI
                     </div>
                   </div>
-                  <span style={{ fontSize: "12px", color: "var(--accent-blue)", fontWeight: 600 }}>
-                    Connecté
+                  <span style={{ fontSize: "11.5px", color: "var(--accent-blue)", fontWeight: 600 }}>
+                    /var/run/vpngate
                   </span>
                 </div>
               </div>
 
-              <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-card)", borderRadius: "var(--radius-lg)", padding: "20px" }}>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#fff", marginBottom: "6px" }}>
+              <div style={{ backgroundColor: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "18px 20px" }}>
+                <h3 style={{ fontSize: "13.5px", fontWeight: 600, color: "#fff", marginBottom: "4px" }}>
                   À propos
                 </h3>
-                <p style={{ fontSize: "12.5px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
-                  VPNGate Client v1.0.0 — Interface native légère conçue pour Linux et macOS.
+                <p style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.6" }}>
+                  vpngate desktop • Client OpenVPN natif épuré pour Linux et macOS.
                 </p>
               </div>
             </div>
@@ -755,7 +799,7 @@ export default function App() {
   );
 }
 
-function TerminalLogs({ backend }: { backend: string }) {
+function TerminalLogsView({ backend }: { backend: string }) {
   const [logText, setLogText] = useState("");
   const [copied, setCopied] = useState(false);
   const logBoxRef = useRef<HTMLPreElement>(null);
@@ -764,7 +808,7 @@ function TerminalLogs({ backend }: { backend: string }) {
     if (backend !== "ok") return;
     const fetchLogs = async () => {
       try {
-        const res = await api.logs(300);
+        const res = await api.logs(250);
         setLogText(res.log);
       } catch {
         // ignore
@@ -788,21 +832,21 @@ function TerminalLogs({ backend }: { backend: string }) {
   };
 
   return (
-    <div className="terminal-shell">
-      <div className="terminal-header-bar">
-        <span>openvpn.log</span>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button className="btn-icon-subtle" onClick={copy}>
-            {copied ? <Check size={12} color="var(--accent-green)" /> : <Copy size={12} />}
+    <div className="clean-terminal-box">
+      <div className="terminal-bar">
+        <span>daemon.log</span>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button className="btn-clean-ghost" onClick={copy}>
+            {copied ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
             <span>{copied ? "Copié" : "Copier"}</span>
           </button>
-          <button className="btn-icon-subtle" onClick={() => setLogText("")}>
+          <button className="btn-clean-ghost" onClick={() => setLogText("")}>
             Effacer
           </button>
         </div>
       </div>
 
-      <pre ref={logBoxRef} className="terminal-body">
+      <pre ref={logBoxRef} className="terminal-stream">
         {logText || "En attente des messages du daemon..."}
       </pre>
     </div>
