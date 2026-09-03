@@ -28,18 +28,26 @@ func DetachAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setsid: true}
 }
 
-// defaultBaseDir is the fixed, machine-wide parent of Dir() on unix. It
-// deliberately does not use os.TempDir()/$TMPDIR: on macOS, $TMPDIR is a
-// per-user path assigned by launchd, and sudo does not preserve it by
-// default, so a root supervisor (sudo connect -d) and a status/disconnect
-// invocation run under a different sudo session would otherwise resolve
-// to two different directories for the same daemon. It's also not /tmp:
-// /tmp is world-writable, so an unprivileged user could pre-create
-// Dir()'s path before the root supervisor does (a symlink/TOCTOU risk),
-// and — since connect/status/disconnect all require root (openvpn needs
-// it regardless; see README) — there's no reason to make daemon state
-// readable outside of root in the first place. /var/run is root-owned
-// and not world-writable on every mainstream unix.
+// defaultBaseDir is the fixed, machine-wide parent of Dir() on unix.
 func defaultBaseDir() string {
+	if os.Geteuid() == 0 {
+		return "/var/run"
+	}
+	// Check if /var/run is accessible/writable
+	if err := syscall.Access("/var/run", 2); err == nil {
+		return "/var/run"
+	}
+	if info, err := os.Stat("/var/run/vpngate"); err == nil && info.IsDir() {
+		if err := syscall.Access("/var/run/vpngate", 2); err == nil {
+			return "/var/run"
+		}
+	}
+	// Fallback for non-root desktop GUI sessions
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		return xdg
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return home
+	}
 	return "/var/run"
 }
