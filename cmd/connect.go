@@ -656,6 +656,8 @@ func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[s
 	if preferred.HostName != "" {
 		cands = append(cands, preferred)
 	}
+
+	prefIdx := len(cands)
 	for _, s := range servers {
 		if s.HostName == preferred.HostName {
 			continue
@@ -664,12 +666,13 @@ func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[s
 			cands = append(cands, s)
 		}
 	}
-	working := cands[1:]
+	working := cands[prefIdx:]
 	sort.SliceStable(working, func(i, j int) bool {
 		ri, rj := results[working[i].HostName], results[working[j].HostName]
 		return vpn.LatencyRank(ri.LatencyMs) < vpn.LatencyRank(rj.LatencyMs)
 	})
 
+	workEnd := len(cands)
 	for _, s := range servers {
 		if s.HostName == preferred.HostName {
 			continue
@@ -678,7 +681,7 @@ func orderedCandidates(servers []vpn.Server, preferred vpn.Server, results map[s
 			cands = append(cands, s)
 		}
 	}
-	rest := cands[1+len(working):]
+	rest := cands[workEnd:]
 	sort.SliceStable(rest, func(i, j int) bool { return rest[i].Score > rest[j].Score })
 
 	return cands

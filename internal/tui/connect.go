@@ -271,7 +271,6 @@ func (m *model) connPanelView(w int) string {
 	lines := cs.lines
 	if len(lines) == 0 {
 		b.WriteString(styleDim.Render(truncate(" waiting for openvpn output…", panelW)) + "\n")
-		avail--
 	} else {
 		m.connClampScroll()
 		start := len(lines) - m.connBottom - avail

@@ -74,6 +74,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "ctrl+c":
+		m.stopConnect()
 		m.quitting = true
 		return m, tea.Quit
 
@@ -83,6 +84,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = ""
 			return m, m.tickIfNeeded()
 		}
+		m.stopConnect()
 		m.quitting = true
 		return m, tea.Quit
 
@@ -114,6 +116,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.tickIfNeeded()
 
 	case "/":
+		m.userMoved = true
 		m.searching = true
 		return m, m.tickIfNeeded()
 
@@ -137,8 +140,10 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgdown", "ctrl+f":
 		m.move(m.visibleRows())
 	case "home":
+		m.userMoved = true
 		m.cursorHost = firstHost(m.displayServers())
 	case "end":
+		m.userMoved = true
 		m.cursorHost = lastHost(m.displayServers())
 	case "w":
 		m.workingOnly = !m.workingOnly
@@ -196,6 +201,7 @@ func lastHost(list []vpn.Server) string {
 // move shifts the selection by delta rows, keeping it pinned to a specific
 // host so re-sorting during live probing cannot hijack the cursor.
 func (m *model) move(delta int) {
+	m.userMoved = true
 	list := m.displayServers()
 	if len(list) == 0 {
 		m.cursorHost = ""

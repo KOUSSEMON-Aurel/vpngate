@@ -170,7 +170,7 @@ func probeOpenVPN(ctx context.Context, server *Server, timeout time.Duration) Pr
 		return ProbeResult{Status: ProbeError, Detail: err.Error()}
 	}
 	_ = tmpfile.Close()
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	bin := probeOpenVPNBin
 	if env := os.Getenv(probeOpenVPNBinEnv); env != "" {

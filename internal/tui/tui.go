@@ -100,9 +100,11 @@ type model struct {
 	globeDirty  bool
 	tickAlive   bool
 	geo         geoInfo
-	order       []string
-	orderRound  uint64
-	lastResize  time.Time
+	order        []string
+	orderRound   uint64
+	orderWorking int
+	userMoved    bool
+	lastResize   time.Time
 	pendingW    int
 	pendingH    int
 	ctx         context.Context

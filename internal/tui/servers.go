@@ -16,11 +16,18 @@ func (m *model) displayServers() []vpn.Server {
 	servers := make([]vpn.Server, len(m.servers))
 	copy(servers, m.servers)
 
-	// Freeze the sort order for the duration of a probe round. Live status
-	// updates then re-render in place instead of shuffling rows (and the
-	// pinned cursor) on every 200ms poll; the order is re-derived once a
-	// full round completes.
-	if m.orderRound != m.round || len(m.order) != len(servers) {
+	// Freeze the sort order for the duration of a probe round, but re-derive
+	// when a full round completes or when newly verified working servers
+	// are found during round 0 so working relays immediately surface to the top.
+	workingCount := 0
+	for _, r := range m.results {
+		if r.Status == vpn.ProbeWorking {
+			workingCount++
+		}
+	}
+	needReorder := m.orderRound != m.round || len(m.order) != len(servers) || (m.round == 0 && workingCount != m.orderWorking)
+
+	if needReorder {
 		sort.SliceStable(servers, func(i, j int) bool {
 			return m.better(servers[i], servers[j])
 		})
@@ -29,6 +36,7 @@ func (m *model) displayServers() []vpn.Server {
 			m.order = append(m.order, s.HostName)
 		}
 		m.orderRound = m.round
+		m.orderWorking = workingCount
 	} else {
 		byHost := make(map[string]int, len(servers))
 		for i := range servers {
@@ -91,7 +99,17 @@ func (m *model) better(a, b vpn.Server) bool {
 			return ka < kb
 		}
 		if ka == 0 {
-			return vpn.LatencyRank(ra.LatencyMs) < vpn.LatencyRank(rb.LatencyMs)
+			la, lb := vpn.LatencyRank(ra.LatencyMs), vpn.LatencyRank(rb.LatencyMs)
+			if la != lb {
+				return la < lb
+			}
+			if a.Score != b.Score {
+				return a.Score > b.Score
+			}
+			return a.HostName < b.HostName
+		}
+		if a.Score != b.Score {
+			return a.Score > b.Score
 		}
 		return a.HostName < b.HostName
 	}

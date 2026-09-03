@@ -420,8 +420,7 @@ func TestTunnelHealthCheckAnyEndpoint(t *testing.T) {
 	// though every other probe fails. The dead endpoint's handler blocks
 	// until the request context expires (the shared probe timeout), then
 	// returns so its httptest server can shut down cleanly.
-	var dead *httptest.Server
-	dead = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}))
 	defer dead.Close()

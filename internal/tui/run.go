@@ -34,14 +34,14 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 	}
 
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		return vpn.Server{}, false, err
+	finalModel, err := p.Run()
+	if fm, ok := finalModel.(*model); ok {
+		fm.stopConnect()
+	} else {
+		m.stopConnect()
 	}
-
-	// Ensure any connection started inside this run is torn down even if the
-	// program exits without a clean key sequence (e.g. parent context cancel).
-	if m.connCancel != nil {
-		m.connCancel()
+	if err != nil {
+		return vpn.Server{}, false, err
 	}
 
 	if m.selected == nil {
@@ -172,7 +172,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.round = msg.round
 		}
 		m.results = msg.results
-		if m.cursorHost == "" && len(m.servers) > 0 {
+		if !m.userMoved && len(m.servers) > 0 {
 			// Auto-follow the best server until the user moves.
 			list := m.displayServers()
 			if len(list) > 0 {

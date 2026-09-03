@@ -25,10 +25,6 @@ func (m *model) View() string {
 	if w <= 0 {
 		w = 100
 	}
-	h := m.height
-	if h <= 0 {
-		h = 24
-	}
 
 	// The connection log panel replaces the list body but keeps the title
 	// bar, and is toggled with the left/right arrows. The list remains the
@@ -117,6 +113,7 @@ func (m *model) frameLayout() frameLayout {
 	}
 	// On every pass, drop the least important chrome until a row fits or
 	// nothing is left to drop.
+reduce:
 	for {
 		fl.rows = h - frameChrome(fl)
 		if fl.rows >= 1 {
@@ -140,7 +137,7 @@ func (m *model) frameLayout() frameLayout {
 		case fl.title:
 			fl.title = false
 		default:
-			break
+			break reduce
 		}
 	}
 	if fl.rows < 1 {

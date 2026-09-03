@@ -209,14 +209,14 @@ func warpConnectCli(ctx context.Context, out io.Writer, onUp func()) error {
 func warpReportUp(out io.Writer, onUp func(), profile string) {
 	if out != nil {
 		if profile != "" {
-			fmt.Fprintf(out, "Connected to Cloudflare WARP (wgcf profile %s)\n", profile)
+			_, _ = fmt.Fprintf(out, "Connected to Cloudflare WARP (wgcf profile %s)\n", profile)
 		} else {
-			fmt.Fprintln(out, "Connected to Cloudflare WARP (warp-cli)")
+			_, _ = fmt.Fprintln(out, "Connected to Cloudflare WARP (warp-cli)")
 		}
 		// connectAttempt's trackedWriter closes its initDone signal on
 		// this exact marker, the same one OpenVPN prints when a tunnel
 		// initializes.
-		fmt.Fprintln(out, "Initialization Sequence Completed")
+		_, _ = fmt.Fprintln(out, "Initialization Sequence Completed")
 	}
 	if onUp != nil {
 		onUp()

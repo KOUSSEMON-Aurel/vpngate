@@ -162,6 +162,9 @@ func openvpnArgs(server Server, configPath string, verb int) ([]string, error) {
 	if credsFile != "" {
 		args = append(args, "--auth-user-pass", credsFile)
 	}
+	if HostRoutesIPv6() {
+		args = append(args, "--block-ipv6")
+	}
 	return args, nil
 }
 
@@ -233,7 +236,7 @@ func ServerConfig(server Server) ([]byte, error) {
 	if !HostRoutesIPv6() {
 		return out, nil
 	}
-	return append(out, []byte("# vpngate: force all IPv6 into the tunnel (relays are IPv4-only)\nroute-ipv6 ::/0\n")...), nil
+	return append(out, []byte("# vpngate: block IPv6 leaks on dual-stack hosts (relays are IPv4-only)\nifconfig-ipv6 fd15:53b6:dead::2/64 fd15:53b6:dead::1\nredirect-gateway ipv6\nblock-ipv6\nroute-ipv6 ::/0\n")...), nil
 }
 
 // WriteServerConfig writes ServerConfig to a temporary file and returns its
