@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.vpngate.mobile.data.model.ConnectionStatus
@@ -90,7 +91,8 @@ fun HomeScreen(
             .fillMaxSize()
             .background(Zinc950)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 20.dp)
+            .padding(top = 12.dp, bottom = 24.dp)
     ) {
         // Top Header
         Row(
@@ -135,7 +137,7 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Hero Button
         HeroConnectButton(
@@ -145,7 +147,7 @@ fun HomeScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Status pill
         Box(
@@ -173,7 +175,7 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Active / Selected Location Card
         Box(
@@ -183,7 +185,7 @@ fun HomeScreen(
                 .background(Zinc900)
                 .border(1.dp, Zinc800, RoundedCornerShape(16.dp))
                 .clickable(onClick = onNavigateToServers)
-                .padding(16.dp)
+                .padding(14.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -209,35 +211,43 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(modifier = Modifier.width(14.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = if (status == ConnectionStatus.CONNECTED) "Connected Location" else "Selected Location",
                             color = Zinc400,
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            maxLines = 1
                         )
                         Text(
                             text = currentServer?.countryLong ?: "Select a Gateway",
                             color = Zinc100,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
                         if (currentServer != null) {
                             val protoLabel = if (currentServer.isWarp) "WireGuard" else "OpenVPN"
-                            val ipDisplay = if (status == ConnectionStatus.CONNECTED && !connectionState.detectedPublicIp.isNullOrBlank()) {
-                                "Public IP: ${connectionState.detectedPublicIp}"
+                            val ip = if (status == ConnectionStatus.CONNECTED && !connectionState.detectedPublicIp.isNullOrBlank()) {
+                                connectionState.detectedPublicIp
                             } else {
                                 currentServer.ip
                             }
                             Text(
-                                text = "$ipDisplay • ${currentServer.ping} ms • $protoLabel",
+                                text = "$ip • ${currentServer.ping} ms • $protoLabel",
                                 color = if (status == ConnectionStatus.CONNECTED) Emerald400 else Zinc400,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Icon(
                     imageVector = Icons.Default.ChevronRight,

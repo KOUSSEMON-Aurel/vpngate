@@ -26,7 +26,10 @@ object UnifiedTunnelManager {
         scope.launch {
             WarpTunnelManager.connectionState.collect { state ->
                 if (activeProtocol == "wireguard") {
-                    _connectionState.value = state
+                    val currentIp = if (state.status == ConnectionStatus.CONNECTED) {
+                        _connectionState.value.detectedPublicIp
+                    } else null
+                    _connectionState.value = state.copy(detectedPublicIp = currentIp)
                 }
             }
         }
@@ -34,7 +37,10 @@ object UnifiedTunnelManager {
         scope.launch {
             OpenVpnTunnelManager.connectionState.collect { state ->
                 if (activeProtocol == "openvpn") {
-                    _connectionState.value = state
+                    val currentIp = if (state.status == ConnectionStatus.CONNECTED) {
+                        _connectionState.value.detectedPublicIp
+                    } else null
+                    _connectionState.value = state.copy(detectedPublicIp = currentIp)
                 }
             }
         }
@@ -70,6 +76,8 @@ object UnifiedTunnelManager {
     }
 
     fun setDetectedPublicIp(ip: String) {
+        // Guard: only emit a new state if the IP actually changed
+        if (_connectionState.value.detectedPublicIp == ip) return
         _connectionState.value = _connectionState.value.copy(detectedPublicIp = ip)
     }
 

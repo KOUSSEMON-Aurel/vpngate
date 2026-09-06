@@ -77,13 +77,13 @@ fun HeroConnectButton(
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.size(240.dp)
+        modifier = modifier.size(210.dp)
     ) {
         // Outer pulsing ring
         if (isConnected || isConnecting) {
             Canvas(
                 modifier = Modifier
-                    .size(190.dp * pulseScale)
+                    .size(175.dp * pulseScale)
             ) {
                 drawCircle(
                     color = activeGlowColor.copy(alpha = pulseAlpha)
@@ -92,7 +92,7 @@ fun HeroConnectButton(
         }
 
         // Outer Border Ring
-        Canvas(modifier = Modifier.size(175.dp)) {
+        Canvas(modifier = Modifier.size(160.dp)) {
             val strokeColor = when {
                 isConnected -> Emerald400
                 isConnecting -> Cyan500
@@ -120,7 +120,7 @@ fun HeroConnectButton(
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(150.dp)
+                .size(136.dp)
                 .shadow(
                     elevation = if (isConnected) 16.dp else 4.dp,
                     shape = CircleShape,
@@ -134,7 +134,7 @@ fun HeroConnectButton(
                     indication = null,
                     onClick = onClick
                 )
-                .padding(24.dp)
+                .padding(22.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.PowerSettingsNew,

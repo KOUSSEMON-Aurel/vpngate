@@ -113,8 +113,7 @@ fun MainAppScreen(
         bottomBar = {
             NavigationBar(
                 containerColor = Zinc900,
-                tonalElevation = 0.dp,
-                modifier = Modifier.navigationBarsPadding()
+                tonalElevation = 0.dp
             ) {
                 items.forEach { screen ->
                     val isSelected = currentDestination?.route == screen.route
@@ -143,11 +142,12 @@ fun MainAppScreen(
             }
         }
     ) { innerPadding ->
+        // innerPadding already accounts for status bar (top) and nav bar (bottom).
+        // Do NOT add statusBarsPadding() here — that causes double-padding on edge-to-edge.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Zinc950)
-                .statusBarsPadding()
                 .padding(innerPadding)
         ) {
             NavHost(

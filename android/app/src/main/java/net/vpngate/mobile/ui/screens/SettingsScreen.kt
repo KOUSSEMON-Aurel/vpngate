@@ -66,7 +66,8 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(Zinc950)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp, bottom = 32.dp)
     ) {
         // Top Header
         Row(

@@ -109,6 +109,7 @@ class VpnViewModel @JvmOverloads constructor(
     private var isConnectingByUser = false
     private var failoverCount = 0
     private val failedIps = mutableSetOf<String>()
+    private var isFetchingIp = false
 
     init {
         val initial = repository.getInitialServers(getApplication())
@@ -125,16 +126,27 @@ class VpnViewModel @JvmOverloads constructor(
                         isConnectingByUser = false
                         failoverCount = 0
                         failedIps.clear()
-                        viewModelScope.launch {
-                            try {
-                                val publicIp = repository.getCurrentPublicIp()
-                                if (publicIp != null) {
-                                    UnifiedTunnelManager.setDetectedPublicIp(publicIp)
+                        // Only fetch IP once per connection — skip if already populated or in flight
+                        if (state.detectedPublicIp.isNullOrBlank() && !isFetchingIp) {
+                            isFetchingIp = true
+                            viewModelScope.launch {
+                                try {
+                                    val publicIp = repository.getCurrentPublicIp()
+                                    if (publicIp != null) {
+                                        UnifiedTunnelManager.setDetectedPublicIp(publicIp)
+                                    }
+                                } catch (_: Exception) {
+                                } finally {
+                                    isFetchingIp = false
                                 }
-                            } catch (_: Exception) {}
+                            }
                         }
                     }
+                    ConnectionStatus.DISCONNECTED -> {
+                        isFetchingIp = false
+                    }
                     ConnectionStatus.ERROR -> {
+                        isFetchingIp = false
                         val failed = state.connectedServer
                         if (failed != null) {
                             failedIps.add(failed.ip)

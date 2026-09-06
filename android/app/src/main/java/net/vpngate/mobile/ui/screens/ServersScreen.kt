@@ -2,6 +2,7 @@ package net.vpngate.mobile.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,12 +12,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -77,6 +80,7 @@ fun ServersScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Zinc950)
+            .imePadding()
             .padding(top = 8.dp)
     ) {
         // Header
@@ -119,11 +123,12 @@ fun ServersScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Protocol Filter Tabs: ALL, WARP, OPENVPN
+        // Protocol Filter Tabs: ALL, WARP, OPENVPN — scrollable so it never wraps on small phones
         val protocolFilter by viewModel.protocolFilter.collectAsState()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -131,7 +136,7 @@ fun ServersScreen(
                 val isSelected = protocolFilter == filter
                 val label = when (filter) {
                     net.vpngate.mobile.ui.viewmodel.ProtocolFilter.ALL -> "All Relays"
-                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.WARP -> "WARP (WireGuard)"
+                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.WARP -> "WARP"
                     net.vpngate.mobile.ui.viewmodel.ProtocolFilter.OPENVPN -> "OpenVPN"
                 }
                 Box(
@@ -140,7 +145,7 @@ fun ServersScreen(
                         .background(if (isSelected) Emerald500 else Zinc900)
                         .border(1.dp, if (isSelected) Emerald500 else Zinc800, RoundedCornerShape(8.dp))
                         .clickable { viewModel.setProtocolFilter(filter) }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
                 ) {
                     Text(
                         text = label,
@@ -237,7 +242,8 @@ fun ServersScreen(
             }
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                // Extra bottom padding ensures the last card is fully visible above the nav bar
+                contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
