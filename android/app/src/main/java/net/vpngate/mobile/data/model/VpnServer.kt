@@ -21,8 +21,11 @@ data class VpnServer(
     val source: String = "vpngate",
     val protocol: String = "openvpn"
 ) {
+    val isWireguard: Boolean
+        get() = protocol == "wireguard" || source == "wireguard" || source == "warp"
+
     val isWarp: Boolean
-        get() = source == "warp" || protocol == "wireguard"
+        get() = isWireguard
 
     val isVpnBook: Boolean
         get() = source == "vpnbook"
@@ -88,9 +91,11 @@ data class VpnServer(
                 operator = "Global Anycast Backbone",
                 message = "WireGuard Protocol",
                 openVpnConfigDataBase64 = "",
-                source = "warp",
+                source = "wireguard",
                 protocol = "wireguard"
             )
         }
+
+        fun createAnycastServer(): VpnServer = createWarpServer()
     }
 }

@@ -24,7 +24,7 @@ object UnifiedTunnelManager {
 
     init {
         scope.launch {
-            WarpTunnelManager.connectionState.collect { state ->
+            WireGuardTunnelManager.connectionState.collect { state ->
                 if (activeProtocol == "wireguard") {
                     val currentIp = if (state.status == ConnectionStatus.CONNECTED) {
                         _connectionState.value.detectedPublicIp
@@ -51,7 +51,7 @@ object UnifiedTunnelManager {
 
         // Disconnect whichever tunnel might be running first
         if (activeProtocol == "wireguard" && !server.isWarp) {
-            scope.launch { WarpTunnelManager.stopWarp(context) }
+            scope.launch { WireGuardTunnelManager.stopTunnel(context) }
         } else if (activeProtocol == "openvpn" && server.isWarp) {
             OpenVpnTunnelManager.stopVpn()
         }
@@ -63,7 +63,7 @@ object UnifiedTunnelManager {
                 connectedServer = server
             )
             scope.launch {
-                WarpTunnelManager.startWarp(context, server)
+                WireGuardTunnelManager.startTunnel(context, server)
             }
         } else {
             activeProtocol = "openvpn"
@@ -85,7 +85,7 @@ object UnifiedTunnelManager {
         Log.d(TAG, "stopVpn called")
         if (activeProtocol == "wireguard") {
             scope.launch {
-                WarpTunnelManager.stopWarp(context)
+                WireGuardTunnelManager.stopTunnel(context)
             }
         } else {
             OpenVpnTunnelManager.stopVpn()

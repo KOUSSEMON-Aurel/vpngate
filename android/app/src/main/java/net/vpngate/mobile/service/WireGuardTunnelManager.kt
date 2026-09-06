@@ -27,7 +27,7 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.util.concurrent.TimeUnit
 
-object WarpTunnelManager : Tunnel {
+object WireGuardTunnelManager : Tunnel {
 
     private const val TAG = "WireGuardTunnelManager"
     private const val TUNNEL_NAME = "OpenRelayWireGuard"
@@ -64,7 +64,7 @@ object WarpTunnelManager : Tunnel {
             Tunnel.State.UP -> {
                 _connectionState.value = VpnConnectionState(
                     status = ConnectionStatus.CONNECTED,
-                    connectedServer = currentServer ?: VpnServer.createWarpServer()
+                    connectedServer = currentServer ?: VpnServer.createAnycastServer()
                 )
                 startStatsMonitoring()
                 startTimer()
@@ -86,7 +86,7 @@ object WarpTunnelManager : Tunnel {
         }
     }
 
-    suspend fun startWarp(context: Context, server: VpnServer) = withContext(Dispatchers.IO) {
+    suspend fun startTunnel(context: Context, server: VpnServer) = withContext(Dispatchers.IO) {
         currentServer = server
         _connectionState.value = VpnConnectionState(
             status = ConnectionStatus.CONNECTING,
@@ -97,10 +97,10 @@ object WarpTunnelManager : Tunnel {
             val b = getBackend(context)
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-            val warpConfig = ensureWarpRegistration(prefs)
+            val tunnelConfig = ensureRelayRegistration(prefs)
             Log.d(TAG, "Starting WireGuard GoBackend with Anycast config...")
 
-            b.setState(this@WarpTunnelManager, Tunnel.State.UP, warpConfig)
+            b.setState(this@WireGuardTunnelManager, Tunnel.State.UP, tunnelConfig)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start WireGuard Anycast", e)
             _connectionState.value = VpnConnectionState(
@@ -111,10 +111,10 @@ object WarpTunnelManager : Tunnel {
         }
     }
 
-    suspend fun stopWarp(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun stopTunnel(context: Context) = withContext(Dispatchers.IO) {
         try {
             val b = getBackend(context)
-            b.setState(this@WarpTunnelManager, Tunnel.State.DOWN, null)
+            b.setState(this@WireGuardTunnelManager, Tunnel.State.DOWN, null)
         } catch (e: Exception) {
             Log.w(TAG, "Error stopping WireGuard tunnel: ${e.message}")
         } finally {
@@ -126,7 +126,7 @@ object WarpTunnelManager : Tunnel {
         }
     }
 
-    private fun ensureWarpRegistration(prefs: SharedPreferences): Config {
+    private fun ensureRelayRegistration(prefs: SharedPreferences): Config {
         var privKey = prefs.getString(PREF_PRIVATE_KEY, null)
         var v4Addr = prefs.getString(PREF_V4_ADDR, null)
         var v6Addr = prefs.getString(PREF_V6_ADDR, null)
@@ -221,7 +221,7 @@ object WarpTunnelManager : Tunnel {
                 delay(1500)
                 try {
                     val b = backend ?: continue
-                    val stats = b.getStatistics(this@WarpTunnelManager)
+                    val stats = b.getStatistics(this@WireGuardTunnelManager)
                     val totalRx = stats.totalRx()
                     val totalTx = stats.totalTx()
                     _connectionState.value = _connectionState.value.copy(
