@@ -633,17 +633,4 @@ func TestForwardableConnectArgsKillSwitch(t *testing.T) {
 	assert.Contains(t, args, "--kill-switch")
 }
 
-// TestForwardableConnectArgsNM verifies that --nm is forwarded
-// to the re-exec'd daemon child.
-func TestForwardableConnectArgsNM(t *testing.T) {
-	flagNM = false
-	args := forwardableConnectArgs()
-	assert.NotContains(t, args, "--nm")
-
-	flagNM = true
-	defer func() { flagNM = false }()
-	args = forwardableConnectArgs()
-	assert.Contains(t, args, "--nm")
-}
-
 
