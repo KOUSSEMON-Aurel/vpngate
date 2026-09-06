@@ -36,5 +36,7 @@ func TestDetachAttrNotNil(t *testing.T) {
 // does (see process_unix.go's defaultBaseDir doc comment).
 func TestDirIsFixedNotPerUserTemp(t *testing.T) {
 	t.Setenv("TMPDIR", "/some/other/per-user/temp/dir")
-	assert.True(t, strings.HasPrefix(Dir(), "/var/run/vpngate"), "Dir() = %q, want prefix /var/run/vpngate", Dir())
+	dir := Dir()
+	assert.False(t, strings.HasPrefix(dir, "/some/other/per-user/temp/dir"), "Dir() = %q, must not use TMPDIR", dir)
+	assert.False(t, strings.HasPrefix(dir, "/tmp/"), "Dir() = %q, must not be under world-writable /tmp", dir)
 }

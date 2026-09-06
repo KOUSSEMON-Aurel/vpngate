@@ -44,12 +44,16 @@ var (
 	flagProtocol       string
 	flagTransport      string
 	flagKillSwitch     bool
+	flagNM             bool
 )
 
 func init() {
 	connectCmd.Flags().BoolVarP(&flagRandom, "random", "r", false, "connect to a random server")
 	connectCmd.Flags().BoolVarP(&flagReconnect, "reconnect", "t", false, "continually attempt to connect to the server")
 	connectCmd.Flags().BoolVarP(&flagKillSwitch, "kill-switch", "k", false, "activate fail-safe kill switch to block traffic outside the vpn tunnel")
+	connectCmd.Flags().BoolVar(&flagNM, "nm", false, "integrate with NetworkManager for native desktop indicators (Linux only)")
+	connectCmd.Flags().BoolVar(&flagNM, "network-manager", false, "integrate with NetworkManager for native desktop indicators (Linux only)")
+	_ = connectCmd.Flags().MarkHidden("network-manager")
 	connectCmd.Flags().StringVarP(&flagProxy, "proxy", "p", "", "provide a http/https proxy server to make requests through (i.e. http://127.0.0.1:8080)")
 	connectCmd.Flags().StringVarP(&flagSocks5Proxy, "socks5", "s", "", "provide a socks5 proxy server to make requests through (i.e. 127.0.0.1:1080)")
 	connectCmd.Flags().StringVar(&flagCountry, "country", "", "filter by country name or country code (i.e. Japan or jp)")
@@ -800,6 +804,9 @@ func connectServer(ctx context.Context, s vpn.Server, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if flagNM {
+		return vpn.NMClient{}.Connect(ctx, s, out)
+	}
 	client, err := vpn.ClientForProtocol(s, flagProtocol)
 	if err != nil {
 		return err
@@ -962,6 +969,9 @@ func forwardableConnectArgs() []string {
 	}
 	if flagKillSwitch {
 		args = append(args, "--kill-switch")
+	}
+	if flagNM {
+		args = append(args, "--nm")
 	}
 	return args
 }

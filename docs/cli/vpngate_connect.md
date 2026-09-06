@@ -23,6 +23,7 @@ vpngate connect [flags]
   -k, --kill-switch               activate fail-safe kill switch to block traffic outside the vpn tunnel
       --max-ping int              filter out servers with ping higher than this value
       --min-score int             filter out servers with score lower than this value
+      --nm                        integrate with NetworkManager for native desktop indicators (Linux only)
       --no-cache                  do not read from or write to the vpn server list cache
       --proto string              filter by tunnel transport (tcp or udp)
       --protocol string           connect with the given VPN protocol (openvpn, l2tp/ipsec, or sstp; defaults to the server's primary protocol)

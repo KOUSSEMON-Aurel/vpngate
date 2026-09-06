@@ -61,6 +61,27 @@ function renderSparklinePath(data: number[], maxVal: number = 30): { line: strin
   return { line, area };
 }
 
+function notify(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    try {
+      new Notification(title, { body });
+    } catch {
+      // ignore
+    }
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((perm) => {
+      if (perm === "granted") {
+        try {
+          new Notification(title, { body });
+        } catch {
+          // ignore
+        }
+      }
+    });
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<"connect" | "servers" | "logs" | "settings">("connect");
   const [backend, setBackend] = useState<"checking" | "ok" | "down">("checking");
@@ -147,6 +168,30 @@ export default function App() {
 
   const connected = status.state === "CONNECTED";
   const connecting = isConnectingState(status.state);
+
+  // Track previous connection state to trigger notifications
+  const prevConnectedRef = useRef<boolean | null>(null);
+
+  // Request notification permissions on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+  }, []);
+
+  // Trigger desktop notifications on connection status changes
+  useEffect(() => {
+    if (prevConnectedRef.current === null) {
+      prevConnectedRef.current = connected;
+      return;
+    }
+    if (!prevConnectedRef.current && connected) {
+      notify("vpngate Connecté 🔒", `Tunnel sécurisé actif vers ${status.country || status.hostname || "le relais distant"}`);
+    } else if (prevConnectedRef.current && !connected && status.state === "DISCONNECTED") {
+      notify("vpngate Déconnecté", "Le tunnel VPN est désormais inactif.");
+    }
+    prevConnectedRef.current = connected;
+  }, [connected, status.country, status.hostname, status.state]);
 
   // Pro Max: Real-time throughput simulation and sparkline updates when connected
   useEffect(() => {
