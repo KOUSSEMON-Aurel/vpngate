@@ -106,6 +106,10 @@ class VpnViewModel @JvmOverloads constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private var isConnectingByUser = false
+    private var failoverCount = 0
+    private val failedIps = mutableSetOf<String>()
+
     init {
         val initial = repository.getInitialServers(getApplication())
         if (initial.isNotEmpty()) {
@@ -113,6 +117,40 @@ class VpnViewModel @JvmOverloads constructor(
             _selectedServer.value = repository.findBestServer(initial) ?: initial.first()
         }
         loadServers(forceRefresh = false)
+
+        viewModelScope.launch {
+            connectionState.collect { state ->
+                when (state.status) {
+                    ConnectionStatus.CONNECTED -> {
+                        isConnectingByUser = false
+                        failoverCount = 0
+                        failedIps.clear()
+                    }
+                    ConnectionStatus.ERROR -> {
+                        val failed = state.connectedServer
+                        if (failed != null) {
+                            failedIps.add(failed.ip)
+                        }
+                        if (isConnectingByUser && failoverCount < 3) {
+                            failoverCount++
+                            val candidates = _servers.value.filter { 
+                                it.ip !in failedIps && it.ping < 9000L && it.openVpnConfigDataBase64.isNotBlank() 
+                            }
+                            val nextCandidate = repository.findBestServer(candidates)
+                            if (nextCandidate != null) {
+                                android.util.Log.i("VpnViewModel", "Automatic failover to ${nextCandidate.ip} (attempt $failoverCount/3)")
+                                _selectedServer.value = nextCandidate
+                                kotlinx.coroutines.delay(600)
+                                UnifiedTunnelManager.startVpn(getApplication(), nextCandidate)
+                                return@collect
+                            }
+                        }
+                        isConnectingByUser = false
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     fun loadServers(forceRefresh: Boolean = false) {
@@ -189,11 +227,17 @@ class VpnViewModel @JvmOverloads constructor(
             return
         }
 
+        isConnectingByUser = true
+        failoverCount = 0
+        failedIps.clear()
         _selectedServer.value = server
         UnifiedTunnelManager.startVpn(context, server)
     }
 
     fun disconnect(context: Context) {
+        isConnectingByUser = false
+        failoverCount = 0
+        failedIps.clear()
         UnifiedTunnelManager.stopVpn(context)
     }
 }

@@ -60,6 +60,7 @@ fun ServerCard(
     }
 
     val pingColor = when {
+        server.ping > 8000 -> Zinc600
         server.ping <= 60 -> Emerald400
         server.ping <= 140 -> Amber500
         else -> Rose500
@@ -143,7 +144,7 @@ fun ServerCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "${server.ping} ms",
+                            text = if (server.ping > 8000) "Offline" else "${server.ping} ms",
                             color = pingColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium

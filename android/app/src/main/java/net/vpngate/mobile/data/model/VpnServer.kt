@@ -49,6 +49,14 @@ data class VpnServer(
     val isBackbone: Boolean
         get() = ip.startsWith("219.100.37.")
 
+    val remotePort: Int by lazy {
+        val match = Regex("""remote\s+[\w\.-]+\s+(\d+)""").find(decodedConfig)
+        match?.groupValues?.get(1)?.toIntOrNull() ?: 443
+    }
+
+    val isOnline: Boolean
+        get() = ping in 1..8999
+
     companion object {
         fun createWarpServer(): VpnServer {
             return VpnServer(

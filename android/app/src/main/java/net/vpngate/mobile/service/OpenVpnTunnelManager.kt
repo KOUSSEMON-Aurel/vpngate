@@ -50,14 +50,15 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
 
         timeoutJob?.cancel()
         timeoutJob = scope.launch {
-            delay(15000)
+            // Allow up to 12s for initial server handshake
+            delay(12_000)
             if (_connectionState.value.status == ConnectionStatus.CONNECTING) {
-                Log.w(TAG, "Connection timeout (15s) reached. Stopping tunnel.")
-                stopVpn()
+                Log.w(TAG, "Initial connection timeout (12s) reached. Stopping tunnel.")
+                stopVpnInternal(isError = true)
                 _connectionState.value = VpnConnectionState(
                     status = ConnectionStatus.ERROR,
                     connectedServer = server,
-                    errorMessage = "Server unreachable. Please select another relay."
+                    errorMessage = "Server ${server.ip} did not respond."
                 )
             }
         }
@@ -68,15 +69,13 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
                 appendLine("redirect-gateway def1")
                 appendLine("dhcp-option DNS 1.1.1.1")
                 appendLine("dhcp-option DNS 8.8.8.8")
-                appendLine("block-outside-dns")
-                appendLine("tun-mtu 1400")
-                appendLine("mssfix 1360")
+                appendLine("tun-mtu 1500")
+                appendLine("mssfix 1450")
                 appendLine("nobind")
                 appendLine("auth-user-pass")
-                appendLine("connect-retry 2")
-                appendLine("connect-retry-max 2")
+                appendLine("connect-retry 1")
+                appendLine("connect-retry-max 1")
                 appendLine("resolv-retry 5")
-                appendLine("server-poll-timeout 10")
                 appendLine()
                 append(server.decodedConfig)
             }
@@ -99,8 +98,7 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
         }
     }
 
-    fun stopVpn() {
-        Log.d(TAG, "Stopping OpenVPN...")
+    private fun stopVpnInternal(isError: Boolean) {
         timeoutJob?.cancel()
         try {
             OpenVPNThread.stop()
@@ -108,10 +106,17 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
             Log.w(TAG, "Error stopping OpenVPNThread: ${e.message}")
         }
         timerJob?.cancel()
-        _connectionState.value = VpnConnectionState(
-            status = ConnectionStatus.DISCONNECTED,
-            connectedServer = null
-        )
+        if (!isError) {
+            _connectionState.value = VpnConnectionState(
+                status = ConnectionStatus.DISCONNECTED,
+                connectedServer = null
+            )
+        }
+    }
+
+    fun stopVpn() {
+        Log.d(TAG, "Stopping OpenVPN...")
+        stopVpnInternal(isError = false)
     }
 
     override fun updateState(
@@ -123,33 +128,71 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
     ) {
         Log.d(TAG, "OpenVPN state update: level=$level, state=$state, msg=$logmessage")
 
+        // Handle successful connection
+        if (level == LibStatus.LEVEL_CONNECTED || state == "CONNECTED") {
+            Log.i(TAG, "OpenVPN connection established successfully!")
+            timeoutJob?.cancel()
+            _connectionState.value = _connectionState.value.copy(
+                status = ConnectionStatus.CONNECTED,
+                connectedServer = currentTargetServer
+            )
+            startTimer()
+            return
+        }
+
         when (level) {
-            LibStatus.LEVEL_CONNECTED -> {
+            LibStatus.LEVEL_CONNECTING_SERVER_REPLIED -> {
+                // Server responded! Extend timeout to allow full TLS handshake and route/push configuration
                 timeoutJob?.cancel()
-                _connectionState.value = _connectionState.value.copy(
-                    status = ConnectionStatus.CONNECTED,
-                    connectedServer = currentTargetServer
-                )
-                startTimer()
-            }
-            LibStatus.LEVEL_START,
-            LibStatus.LEVEL_CONNECTING_SERVER_REPLIED,
-            LibStatus.LEVEL_CONNECTING_NO_SERVER_REPLY_YET -> {
+                timeoutJob = scope.launch {
+                    delay(25_000)
+                    if (_connectionState.value.status == ConnectionStatus.CONNECTING) {
+                        Log.w(TAG, "Tunnel configuration timeout (25s) reached.")
+                        stopVpnInternal(isError = true)
+                        _connectionState.value = VpnConnectionState(
+                            status = ConnectionStatus.ERROR,
+                            connectedServer = currentTargetServer,
+                            errorMessage = "Server ${currentTargetServer?.ip} timed out during configuration."
+                        )
+                    }
+                }
                 _connectionState.value = _connectionState.value.copy(
                     status = ConnectionStatus.CONNECTING,
                     connectedServer = currentTargetServer
                 )
             }
+            LibStatus.LEVEL_START,
+            LibStatus.LEVEL_CONNECTING_NO_SERVER_REPLY_YET -> {
+                if (state == "RECONNECTING") {
+                    Log.w(TAG, "OpenVPN connection attempt failed and triggered RECONNECTING.")
+                    timeoutJob?.cancel()
+                    stopVpnInternal(isError = true)
+                    _connectionState.value = VpnConnectionState(
+                        status = ConnectionStatus.ERROR,
+                        connectedServer = currentTargetServer,
+                        errorMessage = "Relay ${currentTargetServer?.ip} refused connection."
+                    )
+                } else {
+                    _connectionState.value = _connectionState.value.copy(
+                        status = ConnectionStatus.CONNECTING,
+                        connectedServer = currentTargetServer
+                    )
+                }
+            }
             LibStatus.LEVEL_NOTCONNECTED,
             LibStatus.LEVEL_NONETWORK -> {
-                timerJob?.cancel()
-                _connectionState.value = VpnConnectionState(
-                    status = ConnectionStatus.DISCONNECTED,
-                    connectedServer = null
-                )
+                // Do not overwrite an ERROR status with DISCONNECTED when the process exits after an error
+                if (_connectionState.value.status != ConnectionStatus.ERROR) {
+                    timerJob?.cancel()
+                    _connectionState.value = VpnConnectionState(
+                        status = ConnectionStatus.DISCONNECTED,
+                        connectedServer = null
+                    )
+                }
             }
             LibStatus.LEVEL_AUTH_FAILED -> {
                 timerJob?.cancel()
+                timeoutJob?.cancel()
                 _connectionState.value = VpnConnectionState(
                     status = ConnectionStatus.ERROR,
                     connectedServer = currentTargetServer,

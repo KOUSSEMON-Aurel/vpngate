@@ -105,18 +105,18 @@ class VpnGateRepository(
         return@withContext cachedServers
     }
 
-    suspend fun pingServers(servers: List<VpnServer>, limit: Int = 15): List<VpnServer> = withContext(Dispatchers.IO) {
+    suspend fun pingServers(servers: List<VpnServer>, limit: Int = 40): List<VpnServer> = withContext(Dispatchers.IO) {
         val targets = servers.take(limit)
         val pinged = targets.map { server ->
             async {
                 if (server.isWarp) {
                     server.copy(ping = 15)
                 } else {
-                    val latency = PingUtil.measureLatency(server.ip)
+                    val latency = PingUtil.measureLatency(server.ip, server.remotePort, timeoutMs = 1200)
                     if (latency > 0) {
                         server.copy(ping = latency)
                     } else {
-                        server
+                        server.copy(ping = 9999L)
                     }
                 }
             }
@@ -127,8 +127,10 @@ class VpnGateRepository(
     }
 
     fun findBestServer(servers: List<VpnServer>): VpnServer? {
-        // Find best OpenVPN relay first (highest bandwidth & university/backbone reliability)
-        val openVpnServers = servers.filter { it.openVpnConfigDataBase64.isNotBlank() }
+        // Filter out dead/unreachable servers
+        val reachable = servers.filter { it.ping < 9000L }
+        val openVpnServers = reachable.filter { it.openVpnConfigDataBase64.isNotBlank() }
+
         val bestOpenVpn = openVpnServers.sortedWith(
             compareByDescending<VpnServer> { it.isBackbone }
                 .thenByDescending { it.isPort443 }
@@ -141,6 +143,6 @@ class VpnGateRepository(
             return bestOpenVpn
         }
 
-        return servers.firstOrNull()
+        return reachable.firstOrNull() ?: servers.firstOrNull()
     }
 }
