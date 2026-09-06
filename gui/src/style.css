@@ -6,7 +6,7 @@
   --bg-surface-hover: #1b1e26;
   --bg-surface-active: #232733;
   --bg-subtle: #111318;
-  
+
   --border: rgba(255, 255, 255, 0.06);
   --border-strong: rgba(255, 255, 255, 0.12);
   --border-focus: #3f424e;
@@ -19,10 +19,10 @@
   --accent-green: #22c55e;
   --accent-green-subtle: rgba(34, 197, 94, 0.12);
   --accent-green-border: rgba(34, 197, 94, 0.25);
-  
+
   --accent-amber: #f59e0b;
   --accent-amber-subtle: rgba(245, 158, 11, 0.12);
-  
+
   --accent-red: #ef4444;
   --accent-red-subtle: rgba(239, 68, 68, 0.12);
   --accent-red-border: rgba(239, 68, 68, 0.25);
@@ -61,13 +61,16 @@ body {
   width: 5px;
   height: 5px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.09);
   border-radius: var(--radius-full);
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.18);
 }
@@ -270,6 +273,7 @@ body {
     r: 6;
     opacity: 0.9;
   }
+
   100% {
     r: 16;
     opacity: 0;
@@ -308,8 +312,14 @@ body {
   height: 6px;
   border-radius: 50%;
 }
-.legend-marker.green { background-color: var(--accent-green); }
-.legend-marker.red { background-color: var(--accent-red); }
+
+.legend-marker.green {
+  background-color: var(--accent-green);
+}
+
+.legend-marker.red {
+  background-color: var(--accent-red);
+}
 
 .legend-item.connected-tag {
   color: var(--accent-green);
@@ -841,7 +851,404 @@ body {
   outline: none;
   cursor: pointer;
 }
+
 .select-clean:focus {
   border-color: var(--border-strong);
   color: var(--text-primary);
+}
+
+.app-stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-app);
+  overflow-y: auto;
+  transition: background 0.4s ease;
+}
+
+.stage-aura-disconnected {
+  background: radial-gradient(circle at 50% 12%, rgba(59, 130, 246, 0.04) 0%, transparent 65%), var(--bg-app);
+}
+
+.stage-aura-connecting {
+  background: radial-gradient(circle at 50% 12%, rgba(245, 158, 11, 0.09) 0%, transparent 70%), var(--bg-app);
+}
+
+.stage-aura-connected {
+  background: radial-gradient(circle at 50% 12%, rgba(34, 197, 94, 0.11) 0%, rgba(6, 78, 59, 0.04) 40%, transparent 75%), var(--bg-app);
+}
+
+/* ========================================================
+   PRO MAX: CENTRAL CYBER POWER SWITCH (Proton / Windscribe)
+   ======================================================== */
+.cyber-power-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0 18px 0;
+  gap: 12px;
+}
+
+.cyber-power-ring-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cyber-orbit-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.orbit-dash-ring {
+  transform-origin: center;
+}
+
+.orbit-dash-ring.spinning {
+  animation: orbit-spin 2s linear infinite;
+}
+
+@keyframes orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cyber-power-btn {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #181b24 0%, #0d0f15 100%);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-tertiary);
+  outline: none;
+  z-index: 2;
+}
+
+.cyber-power-btn:hover:not(:disabled) {
+  transform: scale(1.04);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.cyber-power-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.cyber-power-btn.connecting {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.3), inset 0 0 15px rgba(245, 158, 11, 0.15);
+  cursor: wait;
+}
+
+.cyber-power-btn.connected {
+  border-color: var(--accent-green);
+  color: #22c55e;
+  background: linear-gradient(145deg, #0e2417 0%, #07150e 100%);
+  box-shadow: 0 0 35px rgba(34, 197, 94, 0.35), 0 8px 25px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(34, 197, 94, 0.25);
+  animation: cyber-breathe 3s ease-in-out infinite alternate;
+}
+
+.cyber-power-btn.connected:hover:not(:disabled) {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: linear-gradient(145deg, #281113 0%, #150809 100%);
+  box-shadow: 0 0 35px rgba(239, 68, 68, 0.35), inset 0 0 15px rgba(239, 68, 68, 0.2);
+}
+
+@keyframes cyber-breathe {
+  0% {
+    box-shadow: 0 0 25px rgba(34, 197, 94, 0.25), inset 0 0 15px rgba(34, 197, 94, 0.15);
+  }
+
+  100% {
+    box-shadow: 0 0 45px rgba(34, 197, 94, 0.5), inset 0 0 25px rgba(34, 197, 94, 0.35);
+  }
+}
+
+.cyber-meta-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.cyber-action-hint {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  transition: color 0.15s ease;
+}
+
+.cyber-action-hint.connected {
+  color: var(--accent-green);
+}
+
+.cyber-action-hint.connecting {
+  color: var(--accent-amber);
+}
+
+.cyber-timer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(20, 22, 28, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cyber-timer-badge.active {
+  border-color: var(--accent-green-border);
+  color: var(--accent-green);
+  background-color: rgba(34, 197, 94, 0.08);
+}
+
+/* ========================================================
+   PRO MAX: LIVE SPEEDOMETER & SPARKLINE TELEMETRY
+   ======================================================== */
+.speed-telemetry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.speed-meter-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.speed-meter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.speed-direction-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.speed-direction-tag.down {
+  color: var(--accent-green);
+}
+
+.speed-direction-tag.up {
+  color: var(--accent-blue);
+}
+
+.speed-total-badge {
+  font-size: 10px;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--text-muted);
+}
+
+.speed-rate-number {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: "JetBrains Mono", monospace;
+  color: #ffffff;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1;
+}
+
+.speed-rate-number span.unit {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 28px;
+  overflow: visible;
+}
+
+/* Signal bar latency meter */
+.signal-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.signal-bar {
+  width: 3px;
+  border-radius: 1px;
+  background-color: var(--text-muted);
+}
+
+.signal-bar.bar-1 {
+  height: 4px;
+}
+
+.signal-bar.bar-2 {
+  height: 7px;
+}
+
+.signal-bar.bar-3 {
+  height: 10px;
+}
+
+.signal-bar.bar-4 {
+  height: 13px;
+}
+
+.signal-bar.active-green {
+  background-color: var(--accent-green);
+}
+
+.signal-bar.active-amber {
+  background-color: var(--accent-amber);
+}
+
+.signal-bar.active-red {
+  background-color: var(--accent-red);
+}
+
+/* ========================================================
+   PRO MAX: FILTER CHIPS & FAVORITES SYSTEM
+   ======================================================== */
+.filter-chips-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0 6px 0;
+}
+
+.filter-chip-btn {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.12s ease;
+}
+
+.filter-chip-btn:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.filter-chip-btn.active {
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  border-color: var(--accent-blue);
+}
+
+.filter-chip-btn.active-star {
+  background-color: rgba(245, 158, 11, 0.16);
+  color: var(--accent-amber);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.star-icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  transition: color 0.12s, transform 0.12s;
+}
+
+.star-icon-btn:hover {
+  color: var(--accent-amber);
+  transform: scale(1.15);
+}
+
+.star-icon-btn.starred {
+  color: var(--accent-amber);
+}
+
+/* ========================================================
+   PRO MAX: SETTINGS TOGGLE SWITCHES (Nordic iOS style)
+   ======================================================== */
+.modern-toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background-color: var(--bg-surface-active);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.modern-toggle-switch.on {
+  background-color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
+.toggle-knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateX(0);
+}
+
+.modern-toggle-switch.on .toggle-knob {
+  transform: translateX(16px);
 }
