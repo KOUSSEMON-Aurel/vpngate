@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -29,14 +30,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import net.vpngate.mobile.data.model.ConnectionStatus
+import net.vpngate.mobile.ui.theme.AppTheme
+import net.vpngate.mobile.ui.theme.Cyan400
 import net.vpngate.mobile.ui.theme.Cyan500
 import net.vpngate.mobile.ui.theme.Emerald400
 import net.vpngate.mobile.ui.theme.Emerald500
-import net.vpngate.mobile.ui.theme.Rose500
-import net.vpngate.mobile.ui.theme.Zinc800
-import net.vpngate.mobile.ui.theme.Zinc900
 
 @Composable
 fun HeroConnectButton(
@@ -44,6 +45,7 @@ fun HeroConnectButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = AppTheme.colors
     val isConnected = status == ConnectionStatus.CONNECTED
     val isConnecting = status == ConnectionStatus.CONNECTING
 
@@ -51,7 +53,7 @@ fun HeroConnectButton(
 
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (isConnected || isConnecting) 1.22f else 1f,
+        targetValue = if (isConnected || isConnecting) 1.25f else 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -60,8 +62,8 @@ fun HeroConnectButton(
     )
 
     val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = if (isConnected || isConnecting) 0.45f else 0f,
-        targetValue = if (isConnected || isConnecting) 0.05f else 0f,
+        initialValue = if (isConnected || isConnecting) 0.40f else 0f,
+        targetValue = if (isConnected || isConnecting) 0.04f else 0f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -70,8 +72,8 @@ fun HeroConnectButton(
     )
 
     val activeGlowColor = when {
-        isConnected -> Emerald500
-        isConnecting -> Cyan500
+        isConnected -> if (colors.isDark) Emerald500 else Color(0xFF10B981)
+        isConnecting -> if (colors.isDark) Cyan500 else Color(0xFF0284C7)
         else -> Color.Transparent
     }
 
@@ -79,42 +81,74 @@ fun HeroConnectButton(
         contentAlignment = Alignment.Center,
         modifier = modifier.size(210.dp)
     ) {
-        // Outer pulsing ring
+        // Outer pulsing ring — uses graphicsLayer so recomposition doesn't run during animation
         if (isConnected || isConnecting) {
-            Canvas(
+            Box(
                 modifier = Modifier
-                    .size(175.dp * pulseScale)
-            ) {
-                drawCircle(
-                    color = activeGlowColor.copy(alpha = pulseAlpha)
-                )
-            }
+                    .size(156.dp)
+                    .graphicsLayer {
+                        scaleX = pulseScale
+                        scaleY = pulseScale
+                        alpha = pulseAlpha
+                    }
+                    .background(activeGlowColor, CircleShape)
+            )
         }
 
         // Outer Border Ring
         Canvas(modifier = Modifier.size(160.dp)) {
             val strokeColor = when {
-                isConnected -> Emerald400
-                isConnecting -> Cyan500
-                else -> Zinc800
+                isConnected -> if (colors.isDark) Emerald400 else Color(0xFF059669)
+                isConnecting -> if (colors.isDark) Cyan400 else Color(0xFF0284C7)
+                else -> if (colors.isDark) Color(0xFF27272A) else Color(0xFFCBD5E1)
             }
             drawCircle(
                 color = strokeColor,
-                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
             )
         }
 
         // Inner Core Button
         val buttonGradient = when {
-            isConnected -> Brush.verticalGradient(listOf(Color(0xFF064E3B), Zinc900))
-            isConnecting -> Brush.verticalGradient(listOf(Color(0xFF164E63), Zinc900))
-            else -> Brush.verticalGradient(listOf(Zinc800, Zinc900))
+            isConnected -> if (colors.isDark) {
+                Brush.verticalGradient(listOf(Color(0xFF064E3B), Color(0xFF18181B)))
+            } else {
+                Brush.verticalGradient(listOf(Color(0xFF10B981), Color(0xFF047857)))
+            }
+            isConnecting -> if (colors.isDark) {
+                Brush.verticalGradient(listOf(Color(0xFF164E63), Color(0xFF18181B)))
+            } else {
+                Brush.verticalGradient(listOf(Color(0xFF0EA5E9), Color(0xFF0284C7)))
+            }
+            else -> if (colors.isDark) {
+                Brush.verticalGradient(listOf(Color(0xFF27272A), Color(0xFF18181B)))
+            } else {
+                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFE2E8F0)))
+            }
+        }
+
+        val buttonBorder = when {
+            isConnected -> if (colors.isDark) Color(0xFF059669) else Color(0xFF047857)
+            isConnecting -> if (colors.isDark) Color(0xFF0284C7) else Color(0xFF0369A1)
+            else -> if (colors.isDark) Color(0xFF3F3F46) else Color(0xFFCBD5E1)
         }
 
         val iconTint = when {
-            isConnected -> Emerald400
-            isConnecting -> Cyan500
-            else -> Color(0xFF71717A)
+            isConnected -> if (colors.isDark) Emerald400 else Color.White
+            isConnecting -> if (colors.isDark) Cyan400 else Color.White
+            else -> if (colors.isDark) Color(0xFF71717A) else Color(0xFF334155)
+        }
+
+        val shadowElevation = when {
+            isConnected -> if (colors.isDark) 16.dp else 12.dp
+            isConnecting -> if (colors.isDark) 14.dp else 10.dp
+            else -> if (colors.isDark) 4.dp else 8.dp
+        }
+
+        val shadowColor = when {
+            isConnected -> activeGlowColor
+            isConnecting -> activeGlowColor
+            else -> if (colors.isDark) Color.Black.copy(alpha = 0.3f) else Color(0x300F172A)
         }
 
         Box(
@@ -122,13 +156,14 @@ fun HeroConnectButton(
             modifier = Modifier
                 .size(136.dp)
                 .shadow(
-                    elevation = if (isConnected) 16.dp else 4.dp,
+                    elevation = shadowElevation,
                     shape = CircleShape,
-                    ambientColor = activeGlowColor,
-                    spotColor = activeGlowColor
+                    ambientColor = shadowColor,
+                    spotColor = shadowColor
                 )
                 .clip(CircleShape)
                 .background(buttonGradient)
+                .border(1.5.dp, buttonBorder, CircleShape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

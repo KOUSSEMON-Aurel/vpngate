@@ -4,16 +4,25 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.vpngate.mobile.data.model.ConnectionStatus
 import net.vpngate.mobile.data.model.VpnConnectionState
 import net.vpngate.mobile.data.model.VpnServer
+import net.vpngate.mobile.data.prefs.AppLanguage
+import net.vpngate.mobile.data.prefs.AppPreferences
+import net.vpngate.mobile.data.prefs.ProtocolPreference
+import net.vpngate.mobile.data.prefs.ThemeMode
 import net.vpngate.mobile.data.repository.VpnGateRepository
 import net.vpngate.mobile.service.UnifiedTunnelManager
 
@@ -33,6 +42,12 @@ class VpnViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: VpnGateRepository = VpnGateRepository()
 ) : AndroidViewModel(application) {
+
+    private val appPreferences = AppPreferences.getInstance(application)
+    val themeMode: StateFlow<ThemeMode> = appPreferences.themeMode
+    val language: StateFlow<AppLanguage> = appPreferences.language
+    val protocolPreference: StateFlow<ProtocolPreference> = appPreferences.protocolPreference
+    val dnsProtection: StateFlow<Boolean> = appPreferences.dnsProtection
 
     val connectionState: StateFlow<VpnConnectionState> = UnifiedTunnelManager.connectionState
 
@@ -60,17 +75,19 @@ class VpnViewModel @JvmOverloads constructor(
     private val _sortMode = MutableStateFlow(SortMode.PING)
     val sortMode = _sortMode.asStateFlow()
 
-    val availableCountries: StateFlow<List<String>> = _servers.combine(_searchQuery) { list, _ ->
+    val availableCountries: StateFlow<List<String>> = _servers.map { list ->
         list.filter { !it.isWarp }
             .map { it.countryShort }
             .distinct()
             .filter { it.isNotBlank() }
             .sorted()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    @OptIn(FlowPreview::class)
     val filteredServers: StateFlow<List<VpnServer>> = combine(
         _servers,
-        _searchQuery,
+        _searchQuery.debounce(150),
         _selectedCountry,
         _protocolFilter,
         _sortMode
@@ -104,7 +121,8 @@ class VpnViewModel @JvmOverloads constructor(
             SortMode.SPEED -> filtered.sortedByDescending { it.speed }
             SortMode.SCORE -> filtered.sortedByDescending { it.score }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var isConnectingByUser = false
     private var failoverCount = 0
@@ -173,6 +191,35 @@ class VpnViewModel @JvmOverloads constructor(
         }
     }
 
+    fun setThemeMode(mode: ThemeMode) {
+        appPreferences.setThemeMode(mode)
+    }
+
+    fun setLanguage(lang: AppLanguage) {
+        appPreferences.setLanguage(lang)
+    }
+
+    fun setDnsProtection(enabled: Boolean) {
+        appPreferences.setDnsProtection(enabled)
+    }
+
+    fun setProtocolPreference(pref: ProtocolPreference) {
+        appPreferences.setProtocolPreference(pref)
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val cacheDir = getApplication<Application>().cacheDir
+                java.io.File(cacheDir, "vpngate_cache.csv").delete()
+                loadServers(forceRefresh = true)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun loadServers(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -207,12 +254,22 @@ class VpnViewModel @JvmOverloads constructor(
         _selectedServer.value = server
     }
 
-    fun updateSearchQuery(query: String) {
-        _searchQuery.value = query
+    fun selectServerByCountry(countryCode: String): VpnServer? {
+        val server = _servers.value.filter {
+            !it.isWarp && it.countryShort.equals(countryCode, ignoreCase = true)
+        }.minByOrNull { it.ping }
+        if (server != null) {
+            _selectedServer.value = server
+        }
+        return server
     }
 
-    fun setCountryFilter(country: String?) {
+    fun selectCountry(country: String?) {
         _selectedCountry.value = country
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
     }
 
     fun setProtocolFilter(filter: ProtocolFilter) {

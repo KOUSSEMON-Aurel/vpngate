@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -42,17 +42,8 @@ import androidx.compose.ui.unit.sp
 import net.vpngate.mobile.data.model.ConnectionStatus
 import net.vpngate.mobile.ui.components.HeroConnectButton
 import net.vpngate.mobile.ui.components.StatsBar
-import net.vpngate.mobile.ui.theme.Amber500
-import net.vpngate.mobile.ui.theme.Cyan400
-import net.vpngate.mobile.ui.theme.Emerald400
-import net.vpngate.mobile.ui.theme.Emerald500
-import net.vpngate.mobile.ui.theme.Rose500
-import net.vpngate.mobile.ui.theme.Zinc100
-import net.vpngate.mobile.ui.theme.Zinc400
-import net.vpngate.mobile.ui.theme.Zinc700
-import net.vpngate.mobile.ui.theme.Zinc800
-import net.vpngate.mobile.ui.theme.Zinc900
-import net.vpngate.mobile.ui.theme.Zinc950
+import net.vpngate.mobile.ui.components.map.WorldMapCard
+import net.vpngate.mobile.ui.theme.AppTheme
 import net.vpngate.mobile.ui.viewmodel.VpnViewModel
 
 @Composable
@@ -63,33 +54,37 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = AppTheme.colors
+    val strings = AppTheme.strings
+
     val connectionState by viewModel.connectionState.collectAsState()
     val selectedServer by viewModel.selectedServer.collectAsState()
+    val servers by viewModel.servers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
     val currentServer = connectionState.connectedServer ?: selectedServer
     val status = connectionState.status
 
     val statusText = when (status) {
-        ConnectionStatus.CONNECTED -> "CONNECTED"
-        ConnectionStatus.CONNECTING -> "CONNECTING…"
-        ConnectionStatus.DISCONNECTING -> "DISCONNECTING…"
-        ConnectionStatus.ERROR -> "CONNECTION FAILED"
-        ConnectionStatus.DISCONNECTED -> "READY TO CONNECT"
+        ConnectionStatus.CONNECTED -> strings.statusConnected
+        ConnectionStatus.CONNECTING -> strings.statusConnecting
+        ConnectionStatus.DISCONNECTING -> strings.statusDisconnecting
+        ConnectionStatus.ERROR -> strings.statusFailed
+        ConnectionStatus.DISCONNECTED -> strings.statusReady
     }
 
     val statusColor = when (status) {
-        ConnectionStatus.CONNECTED -> Emerald400
-        ConnectionStatus.CONNECTING -> Cyan400
-        ConnectionStatus.ERROR -> Rose500
-        else -> Zinc400
+        ConnectionStatus.CONNECTED -> colors.statusConnected
+        ConnectionStatus.CONNECTING -> colors.statusConnecting
+        ConnectionStatus.ERROR -> colors.statusError
+        else -> colors.textMuted
     }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .fillMaxSize()
-            .background(Zinc950)
+            .background(colors.background)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(top = 12.dp, bottom = 24.dp)
@@ -104,13 +99,13 @@ fun HomeScreen(
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null,
-                    tint = if (status == ConnectionStatus.CONNECTED) Emerald500 else Zinc400,
+                    tint = if (status == ConnectionStatus.CONNECTED) colors.statusConnected else colors.textMuted,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "VPNGATE",
-                    color = Zinc100,
+                    color = colors.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     letterSpacing = 1.sp
@@ -124,18 +119,31 @@ fun HomeScreen(
                 if (isLoading) {
                     CircularProgressIndicator(
                         strokeWidth = 2.dp,
-                        color = Emerald500,
+                        color = colors.statusConnected,
                         modifier = Modifier.size(20.dp)
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Refresh Servers",
-                        tint = Zinc400
+                        tint = colors.textMuted
                     )
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // World Map Gateway Card with Glowing Points Lumineux & Flight Arc
+        WorldMapCard(
+            servers = servers,
+            selectedServer = selectedServer,
+            connectedServer = connectionState.connectedServer,
+            status = status,
+            onSelectServer = { server ->
+                viewModel.selectServer(server)
+            }
+        )
 
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -150,12 +158,31 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         // Status pill
+        val statusPillBg = when (status) {
+            ConnectionStatus.CONNECTED -> if (colors.isDark) Color(0xFF064E3B).copy(alpha = 0.4f) else Color(0xFFD1FAE5)
+            ConnectionStatus.CONNECTING -> if (colors.isDark) Color(0xFF164E63).copy(alpha = 0.4f) else Color(0xFFE0F2FE)
+            ConnectionStatus.ERROR -> if (colors.isDark) Color(0xFF4C0519).copy(alpha = 0.4f) else Color(0xFFFFE4E6)
+            else -> colors.surface
+        }
+        val statusPillBorder = when (status) {
+            ConnectionStatus.CONNECTED -> colors.statusConnected
+            ConnectionStatus.CONNECTING -> colors.statusConnecting
+            ConnectionStatus.ERROR -> colors.statusError
+            else -> colors.border
+        }
+
         Box(
             modifier = Modifier
+                .shadow(
+                    elevation = if (colors.isDark) 0.dp else 2.dp,
+                    shape = RoundedCornerShape(20.dp),
+                    ambientColor = colors.cardShadowColor,
+                    spotColor = colors.cardShadowColor
+                )
                 .clip(RoundedCornerShape(20.dp))
-                .background(Zinc900)
-                .border(1.dp, Zinc800, RoundedCornerShape(20.dp))
-                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .background(statusPillBg)
+                .border(1.dp, statusPillBorder, RoundedCornerShape(20.dp))
+                .padding(horizontal = 16.dp, vertical = 7.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -169,7 +196,7 @@ fun HomeScreen(
                     text = statusText,
                     color = statusColor,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )
             }
@@ -181,9 +208,15 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .shadow(
+                    elevation = if (colors.isDark) 0.dp else 4.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    ambientColor = colors.cardShadowColor,
+                    spotColor = colors.cardShadowColor
+                )
                 .clip(RoundedCornerShape(16.dp))
-                .background(Zinc900)
-                .border(1.dp, Zinc800, RoundedCornerShape(16.dp))
+                .background(colors.surface)
+                .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                 .clickable(onClick = onNavigateToServers)
                 .padding(14.dp)
         ) {
@@ -200,13 +233,13 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Zinc800)
-                            .border(1.dp, Zinc700, RoundedCornerShape(10.dp)),
+                            .background(if (colors.isDark) colors.surfaceVariant else Color(0xFFE0F2FE))
+                            .border(1.dp, if (colors.isDark) colors.border else Color(0xFFBAE6FD), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = currentServer?.countryBadge ?: "VPN",
-                            color = Color(0xFF38BDF8),
+                            color = colors.accentSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -215,14 +248,14 @@ fun HomeScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (status == ConnectionStatus.CONNECTED) "Connected Location" else "Selected Location",
-                            color = Zinc400,
+                            text = if (status == ConnectionStatus.CONNECTED) strings.connectedLocation else strings.selectedLocation,
+                            color = colors.textSecondary,
                             fontSize = 11.sp,
                             maxLines = 1
                         )
                         Text(
-                            text = currentServer?.countryLong ?: "Select a Gateway",
-                            color = Zinc100,
+                            text = currentServer?.countryLong ?: strings.selectGateway,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -238,7 +271,7 @@ fun HomeScreen(
                             }
                             Text(
                                 text = "$ip • ${currentServer.ping} ms • $protoLabel",
-                                color = if (status == ConnectionStatus.CONNECTED) Emerald400 else Zinc400,
+                                color = if (status == ConnectionStatus.CONNECTED) colors.statusConnected else colors.textSecondary,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -252,7 +285,7 @@ fun HomeScreen(
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = "Change Server",
-                    tint = Zinc400,
+                    tint = colors.textMuted,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -264,20 +297,20 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF271317))
-                    .border(1.dp, Color(0xFF881337), RoundedCornerShape(12.dp))
+                    .background(if (colors.isDark) Color(0xFF271317) else Color(0xFFFFE4E6))
+                    .border(1.dp, if (colors.isDark) Color(0xFF881337) else Color(0xFFFDA4AF), RoundedCornerShape(12.dp))
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Text(
                     text = connectionState.errorMessage ?: "Connection error",
-                    color = Rose500,
+                    color = colors.statusError,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
         } 
         
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Stats Dashboard
         StatsBar(

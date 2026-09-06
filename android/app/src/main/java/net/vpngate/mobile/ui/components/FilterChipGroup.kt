@@ -12,14 +12,10 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import net.vpngate.mobile.ui.theme.Emerald500
-import net.vpngate.mobile.ui.theme.Zinc100
-import net.vpngate.mobile.ui.theme.Zinc400
-import net.vpngate.mobile.ui.theme.Zinc800
-import net.vpngate.mobile.ui.theme.Zinc900
-import net.vpngate.mobile.ui.theme.Zinc950
+import net.vpngate.mobile.ui.theme.AppTheme
 
 @Composable
 fun FilterChipGroup(
@@ -28,6 +24,7 @@ fun FilterChipGroup(
     onSelectCountry: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = AppTheme.colors
     val scrollState = rememberScrollState()
 
     Row(
@@ -41,14 +38,14 @@ fun FilterChipGroup(
             onClick = { onSelectCountry(null) },
             label = { Text("All", fontSize = 12.sp) },
             colors = FilterChipDefaults.filterChipColors(
-                containerColor = Zinc900,
-                labelColor = Zinc400,
-                selectedContainerColor = Emerald500,
-                selectedLabelColor = Zinc950
+                containerColor = colors.surface,
+                labelColor = colors.textSecondary,
+                selectedContainerColor = colors.accentPrimary,
+                selectedLabelColor = if (colors.isDark) Color(0xFF09090B) else Color.White
             ),
             border = FilterChipDefaults.filterChipBorder(
-                borderColor = Zinc800,
-                selectedBorderColor = Emerald500,
+                borderColor = colors.border,
+                selectedBorderColor = colors.accentPrimary,
                 enabled = true,
                 selected = selectedCountry == null
             )
@@ -62,14 +59,14 @@ fun FilterChipGroup(
                 onClick = { onSelectCountry(if (isSelected) null else code) },
                 label = { Text(code, fontSize = 12.sp) },
                 colors = FilterChipDefaults.filterChipColors(
-                    containerColor = Zinc900,
-                    labelColor = Zinc100,
-                    selectedContainerColor = Emerald500,
-                    selectedLabelColor = Zinc950
+                    containerColor = colors.surface,
+                    labelColor = colors.textPrimary,
+                    selectedContainerColor = colors.accentPrimary,
+                    selectedLabelColor = if (colors.isDark) Color(0xFF09090B) else Color.White
                 ),
                 border = FilterChipDefaults.filterChipBorder(
-                    borderColor = Zinc800,
-                    selectedBorderColor = Emerald500,
+                    borderColor = colors.border,
+                    selectedBorderColor = colors.accentPrimary,
                     enabled = true,
                     selected = isSelected
                 )

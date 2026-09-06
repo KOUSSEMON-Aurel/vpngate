@@ -24,18 +24,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.vpngate.mobile.data.model.ConnectionStatus
-import net.vpngate.mobile.ui.theme.Cyan400
-import net.vpngate.mobile.ui.theme.Emerald400
-import net.vpngate.mobile.ui.theme.Rose400
-import net.vpngate.mobile.ui.theme.Zinc100
-import net.vpngate.mobile.ui.theme.Zinc400
-import net.vpngate.mobile.ui.theme.Zinc800
-import net.vpngate.mobile.ui.theme.Zinc900
+import net.vpngate.mobile.ui.theme.AppTheme
 import java.util.Locale
 
 @Composable
@@ -46,6 +41,8 @@ fun StatsBar(
     bytesOut: Long,
     modifier: Modifier = Modifier
 ) {
+    val colors = AppTheme.colors
+    val strings = AppTheme.strings
     val isConnected = status == ConnectionStatus.CONNECTED
 
     val minutes = durationSeconds / 60
@@ -55,9 +52,15 @@ fun StatsBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(
+                elevation = if (colors.isDark) 0.dp else 4.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = colors.cardShadowColor,
+                spotColor = colors.cardShadowColor
+            )
             .clip(RoundedCornerShape(16.dp))
-            .background(Zinc900)
-            .border(1.dp, Zinc800, RoundedCornerShape(16.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.border, RoundedCornerShape(16.dp))
             .padding(14.dp)
     ) {
         Row(
@@ -67,30 +70,30 @@ fun StatsBar(
         ) {
             StatItem(
                 icon = Icons.Default.Timer,
-                iconColor = if (isConnected) Emerald400 else Zinc400,
-                label = "Duration",
+                iconColor = if (isConnected) colors.statusConnected else colors.textMuted,
+                label = strings.duration,
                 value = durationText
             )
 
             StatItem(
                 icon = Icons.Default.ArrowDownward,
-                iconColor = if (isConnected) Cyan400 else Zinc400,
-                label = "Download",
+                iconColor = if (isConnected) colors.accentSecondary else colors.textMuted,
+                label = strings.download,
                 value = formatBytes(bytesIn)
             )
 
             StatItem(
                 icon = Icons.Default.ArrowUpward,
-                iconColor = if (isConnected) Cyan400 else Zinc400,
-                label = "Upload",
+                iconColor = if (isConnected) colors.accentSecondary else colors.textMuted,
+                label = strings.upload,
                 value = formatBytes(bytesOut)
             )
 
             StatItem(
                 icon = if (isConnected) Icons.Default.Lock else Icons.Default.LockOpen,
-                iconColor = if (isConnected) Emerald400 else Rose400,
-                label = "Status",
-                value = if (isConnected) "Protected" else "Exposed"
+                iconColor = if (isConnected) colors.statusConnected else colors.statusError,
+                label = strings.statusLabel,
+                value = if (isConnected) strings.statusProtected else strings.statusExposed
             )
         }
     }
@@ -103,6 +106,7 @@ private fun StatItem(
     label: String,
     value: String
 ) {
+    val colors = AppTheme.colors
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
             imageVector = icon,
@@ -113,13 +117,13 @@ private fun StatItem(
         Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = value,
-            color = Zinc100,
+            color = colors.textPrimary,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold
         )
         Text(
             text = label,
-            color = Zinc400,
+            color = colors.textSecondary,
             fontSize = 10.sp
         )
     }

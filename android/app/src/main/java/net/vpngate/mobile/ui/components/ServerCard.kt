@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -26,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,16 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.vpngate.mobile.data.model.VpnServer
 import net.vpngate.mobile.ui.theme.Amber500
-import net.vpngate.mobile.ui.theme.Emerald400
-import net.vpngate.mobile.ui.theme.Emerald500
+import net.vpngate.mobile.ui.theme.AppTheme
 import net.vpngate.mobile.ui.theme.Rose500
-import net.vpngate.mobile.ui.theme.Zinc100
-import net.vpngate.mobile.ui.theme.Zinc400
-import net.vpngate.mobile.ui.theme.Zinc600
-import net.vpngate.mobile.ui.theme.Zinc700
-import net.vpngate.mobile.ui.theme.Zinc800
-import net.vpngate.mobile.ui.theme.Zinc900
-import java.util.Locale
 
 @Composable
 fun ServerCard(
@@ -53,15 +45,18 @@ fun ServerCard(
     onConnect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = AppTheme.colors
+    val strings = AppTheme.strings
+
     val borderColor = when {
-        isCurrentConnected -> Emerald500
-        isSelected -> Color(0xFF38BDF8)
-        else -> Zinc800
+        isCurrentConnected -> colors.statusConnected
+        isSelected -> colors.accentSecondary
+        else -> colors.border
     }
 
     val pingColor = when {
-        server.ping > 8000 -> Zinc600
-        server.ping <= 60 -> Emerald400
+        server.ping > 8000 -> colors.textMuted
+        server.ping <= 60 -> colors.statusConnected
         server.ping <= 140 -> Amber500
         else -> Rose500
     }
@@ -69,8 +64,14 @@ fun ServerCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(
+                elevation = if (colors.isDark) 0.dp else 3.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = colors.cardShadowColor,
+                spotColor = colors.cardShadowColor
+            )
             .clip(RoundedCornerShape(16.dp))
-            .background(Zinc900)
+            .background(colors.surface)
             .border(1.dp, borderColor, RoundedCornerShape(16.dp))
             .clickable(onClick = onSelect)
             .padding(14.dp)
@@ -89,24 +90,24 @@ fun ServerCard(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Zinc800)
-                        .border(1.dp, Zinc700, RoundedCornerShape(8.dp)),
+                        .background(if (colors.isDark) colors.surfaceVariant else Color(0xFFE0F2FE))
+                        .border(1.dp, if (colors.isDark) colors.border else Color(0xFFBAE6FD), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = server.countryBadge,
-                        color = Color(0xFF38BDF8),
+                        color = colors.accentSecondary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = server.countryLong,
-                            color = Zinc100,
+                            color = colors.textPrimary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp,
                             maxLines = 1,
@@ -117,7 +118,7 @@ fun ServerCard(
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = "Active Server",
-                                tint = Emerald400,
+                                tint = colors.statusConnected,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -127,15 +128,16 @@ fun ServerCard(
 
                     Text(
                         text = server.ip,
-                        color = Zinc400,
-                        fontSize = 12.sp
+                        color = colors.textSecondary,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
 
                     // Metrics badge row
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Ping dot
                         Box(
                             modifier = Modifier
                                 .size(6.dp)
@@ -152,16 +154,15 @@ fun ServerCard(
 
                         Spacer(modifier = Modifier.width(10.dp))
 
-                        // Protocol badge
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(if (server.isWarp) Color(0xFF0F2E3A) else Zinc800)
-                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                .background(if (server.isWarp) colors.accentSecondary.copy(alpha = 0.15f) else colors.surfaceVariant)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = if (server.isWarp) "WARP WireGuard" else "OpenVPN",
-                                color = if (server.isWarp) Color(0xFF38BDF8) else Zinc400,
+                                color = if (server.isWarp) colors.accentSecondary else colors.textSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -170,18 +171,30 @@ fun ServerCard(
                 }
             }
 
+            Spacer(modifier = Modifier.width(8.dp))
+
             // Connect button
+            val btnBg = when {
+                isCurrentConnected -> if (colors.isDark) Color(0xFF064E3B) else Color(0xFFD1FAE5)
+                else -> if (colors.isDark) colors.surfaceVariant else Color(0xFFF1F5F9)
+            }
+            val btnFg = when {
+                isCurrentConnected -> if (colors.isDark) colors.statusConnected else Color(0xFF065F46)
+                else -> colors.textPrimary
+            }
+
             FilledTonalButton(
                 onClick = onConnect,
                 colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = if (isCurrentConnected) Color(0xFF064E3B) else Zinc800,
-                    contentColor = if (isCurrentConnected) Emerald400 else Zinc100
+                    containerColor = btnBg,
+                    contentColor = btnFg
                 ),
+                border = if (!isCurrentConnected && !colors.isDark) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)) else null,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.height(36.dp)
             ) {
                 Text(
-                    text = if (isCurrentConnected) "Active" else "Connect",
+                    text = if (isCurrentConnected) "Active" else strings.btnConnect,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
