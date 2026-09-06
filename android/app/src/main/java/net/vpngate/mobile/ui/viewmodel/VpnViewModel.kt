@@ -125,6 +125,14 @@ class VpnViewModel @JvmOverloads constructor(
                         isConnectingByUser = false
                         failoverCount = 0
                         failedIps.clear()
+                        viewModelScope.launch {
+                            try {
+                                val publicIp = repository.getCurrentPublicIp()
+                                if (publicIp != null) {
+                                    UnifiedTunnelManager.setDetectedPublicIp(publicIp)
+                                }
+                            } catch (_: Exception) {}
+                        }
                     }
                     ConnectionStatus.ERROR -> {
                         val failed = state.connectedServer

@@ -15,5 +15,6 @@ data class VpnConnectionState(
     val bytesIn: Long = 0,
     val bytesOut: Long = 0,
     val currentPingMs: Long = 0,
+    val detectedPublicIp: String? = null,
     val errorMessage: String? = null
 )

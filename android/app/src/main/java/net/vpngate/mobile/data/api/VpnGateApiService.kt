@@ -51,4 +51,24 @@ class VpnGateApiService {
 
         throw lastException ?: IOException("Failed to fetch from all VPNGate endpoints")
     }
+
+    suspend fun fetchCurrentPublicIp(): String? = withContext(Dispatchers.IO) {
+        val testUrls = listOf(
+            "https://api.ipify.org",
+            "https://ifconfig.me/ip",
+            "https://icanhazip.com"
+        )
+        for (url in testUrls) {
+            try {
+                val request = Request.Builder().url(url).build()
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string()?.trim()
+                        if (!body.isNullOrBlank()) return@withContext body
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        null
+    }
 }

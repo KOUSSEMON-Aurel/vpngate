@@ -69,6 +69,10 @@ object UnifiedTunnelManager {
         }
     }
 
+    fun setDetectedPublicIp(ip: String) {
+        _connectionState.value = _connectionState.value.copy(detectedPublicIp = ip)
+    }
+
     fun stopVpn(context: Context) {
         Log.d(TAG, "stopVpn called")
         if (activeProtocol == "wireguard") {

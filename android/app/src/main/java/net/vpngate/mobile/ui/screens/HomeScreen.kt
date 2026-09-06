@@ -225,9 +225,14 @@ fun HomeScreen(
                         )
                         if (currentServer != null) {
                             val protoLabel = if (currentServer.isWarp) "WireGuard" else "OpenVPN"
+                            val ipDisplay = if (status == ConnectionStatus.CONNECTED && !connectionState.detectedPublicIp.isNullOrBlank()) {
+                                "Public IP: ${connectionState.detectedPublicIp}"
+                            } else {
+                                currentServer.ip
+                            }
                             Text(
-                                text = "${currentServer.ip} • ${currentServer.ping} ms • $protoLabel",
-                                color = Zinc400,
+                                text = "$ipDisplay • ${currentServer.ping} ms • $protoLabel",
+                                color = if (status == ConnectionStatus.CONNECTED) Emerald400 else Zinc400,
                                 fontSize = 12.sp
                             )
                         }

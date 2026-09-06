@@ -145,4 +145,8 @@ class VpnGateRepository(
 
         return reachable.firstOrNull() ?: servers.firstOrNull()
     }
+
+    suspend fun getCurrentPublicIp(): String? {
+        return apiService.fetchCurrentPublicIp()
+    }
 }
