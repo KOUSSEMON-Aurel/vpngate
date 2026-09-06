@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">VPNGate</string>
+    <string name="app_name">OpenRelay VPN</string>
     <string name="vpn_channel_name">VPN Connection</string>
     <string name="vpn_channel_desc">Shows active VPN connection status and duration</string>
     <string name="vpn_connected">Connected to %1$s</string>

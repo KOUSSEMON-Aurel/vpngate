@@ -88,7 +88,7 @@ class VpnGateRepository(
                 val merged = listOf(warp) + parsed
                 cachedServers = merged
                 isLiveLoaded = true
-                Log.d("VPNGate", "Total servers available: ${merged.size} (including WARP)")
+                Log.d("OpenRelay", "Total servers available: ${merged.size} (including WireGuard)")
                 return@withContext merged
             }
         } catch (e: Exception) {

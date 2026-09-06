@@ -161,7 +161,7 @@ fun ServerCard(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = if (server.isWarp) "WARP WireGuard" else "OpenVPN",
+                                text = if (server.isWarp) "WireGuard" else "OpenVPN",
                                 color = if (server.isWarp) colors.accentSecondary else colors.textSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold

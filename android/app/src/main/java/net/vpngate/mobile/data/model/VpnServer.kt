@@ -73,19 +73,19 @@ data class VpnServer(
     companion object {
         fun createWarpServer(): VpnServer {
             return VpnServer(
-                hostName = "warp",
+                hostName = "anycast-relay",
                 ip = "162.159.192.1",
                 score = 999999,
                 ping = 15,
                 speed = 1000 * 1024 * 1024L,
-                countryLong = "Cloudflare WARP",
-                countryShort = "CF",
+                countryLong = "Anycast Fast Relay (WireGuard)",
+                countryShort = "WG",
                 numVpnSessions = 10000,
                 uptime = 9999999,
                 totalUsers = 5000000,
                 totalTraffic = 1000000000,
                 logType = "none",
-                operator = "Cloudflare Anycast Backbone",
+                operator = "Global Anycast Backbone",
                 message = "WireGuard Protocol",
                 openVpnConfigDataBase64 = "",
                 source = "warp",

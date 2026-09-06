@@ -31,10 +31,12 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VpnLock
 import androidx.compose.material3.BottomSheetDefaults
@@ -48,6 +50,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,6 +88,7 @@ fun SettingsScreen(
     val dnsProtection by viewModel.dnsProtection.collectAsState()
 
     var showLanguageBottomSheet by remember { mutableStateOf(false) }
+    var showLicensesDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -487,13 +491,13 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "VPNGate Client",
+                        text = "OpenRelay VPN",
                         color = colors.textPrimary,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${strings.versionLabel} 2.1.0",
+                        text = "${strings.versionLabel} 1.0.0",
                         color = colors.statusConnected,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -511,14 +515,157 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // Academic disclaimer card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (colors.isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9))
+                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = strings.academicDisclaimer,
+                        color = colors.textSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Item: Open Source Licenses
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.vpngate.net/"))
-                            context.startActivity(intent)
-                        } catch (_: Exception) {}
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showLicensesDialog = true }
+                        .padding(vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = null,
+                            tint = colors.accentPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = strings.openSourceLicenses,
+                            color = colors.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Item: Privacy Policy
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            try {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://github.com/KOUSSEMON-Aurel/vpngate/blob/mobile/PRIVACY_POLICY.md")
+                                )
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                        .padding(vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Policy,
+                            contentDescription = null,
+                            tint = colors.accentSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = strings.privacyPolicy,
+                            color = colors.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                // Item: GitHub Source Repository
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            try {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://github.com/KOUSSEMON-Aurel/vpngate")
+                                )
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                        .padding(vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "GitHub Repository",
+                            color = colors.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                // Item: University of Tsukuba VPN Gate project
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            try {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://www.vpngate.net/")
+                                )
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                        .padding(vertical = 8.dp)
                 ) {
                     Text(
                         text = "https://www.vpngate.net",
@@ -526,7 +673,6 @@ fun SettingsScreen(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = null,
@@ -608,6 +754,13 @@ fun SettingsScreen(
             }
         }
     }
+
+    if (showLicensesDialog) {
+        LicensesDialog(
+            strings = strings,
+            onDismiss = { showLicensesDialog = false }
+        )
+    }
 }
 
 @Composable
@@ -681,3 +834,143 @@ private fun ThemeOptionCard(
         }
     }
 }
+
+@Composable
+private fun LicensesDialog(
+    strings: net.vpngate.mobile.ui.i18n.AppStrings,
+    onDismiss: () -> Unit
+) {
+    val colors = AppTheme.colors
+    val context = LocalContext.current
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(colors.surface)
+                .border(1.dp, colors.border, RoundedCornerShape(20.dp))
+                .padding(20.dp)
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (colors.isDark) colors.surfaceVariant else Color(0xFFF1F5F9)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = null,
+                            tint = colors.accentPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = strings.openSourceLicenses,
+                        color = colors.textPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (colors.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC))
+                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    LicenseItem(
+                        name = "OpenRelay VPN",
+                        license = "GPLv2 & MIT",
+                        copyright = "© 2024-2026 OpenRelay Contributors"
+                    )
+                    LicenseItem(
+                        name = "OpenVPN 3 Core",
+                        license = "GNU General Public License v2 (GPLv2)",
+                        copyright = "© OpenVPN Inc."
+                    )
+                    LicenseItem(
+                        name = "WireGuard Go Backend",
+                        license = "Apache License 2.0",
+                        copyright = "© Jason A. Donenfeld & WireGuard LLC"
+                    )
+                    LicenseItem(
+                        name = "Jetpack Compose / AndroidX",
+                        license = "Apache License 2.0",
+                        copyright = "© The Android Open Source Project"
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://github.com/KOUSSEMON-Aurel/vpngate")
+                                )
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("GitHub", fontSize = 13.sp)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    FilledTonalButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = colors.accentPrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("OK", fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LicenseItem(name: String, license: String, copyright: String) {
+    val colors = AppTheme.colors
+    Column {
+        Text(
+            text = name,
+            color = colors.textPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = license,
+            color = colors.accentSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = copyright,
+            color = colors.textMuted,
+            fontSize = 10.sp
+        )
+    }
+}
+

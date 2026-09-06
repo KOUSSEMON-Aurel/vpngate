@@ -29,9 +29,9 @@ import java.util.concurrent.TimeUnit
 
 object WarpTunnelManager : Tunnel {
 
-    private const val TAG = "WarpTunnelManager"
-    private const val TUNNEL_NAME = "CloudflareWARP"
-    private const val PREFS_NAME = "warp_tunnel_prefs"
+    private const val TAG = "WireGuardTunnelManager"
+    private const val TUNNEL_NAME = "OpenRelayWireGuard"
+    private const val PREFS_NAME = "openrelay_wireguard_prefs"
 
     private const val PREF_PRIVATE_KEY = "priv_key"
     private const val PREF_PUBLIC_KEY = "pub_key"
@@ -98,15 +98,15 @@ object WarpTunnelManager : Tunnel {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
             val warpConfig = ensureWarpRegistration(prefs)
-            Log.d(TAG, "Starting WireGuard GoBackend with WARP config...")
+            Log.d(TAG, "Starting WireGuard GoBackend with Anycast config...")
 
             b.setState(this@WarpTunnelManager, Tunnel.State.UP, warpConfig)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start Cloudflare WARP", e)
+            Log.e(TAG, "Failed to start WireGuard Anycast", e)
             _connectionState.value = VpnConnectionState(
                 status = ConnectionStatus.ERROR,
                 connectedServer = server,
-                errorMessage = e.message ?: "Failed to connect to WARP"
+                errorMessage = e.message ?: "Failed to connect to WireGuard Anycast"
             )
         }
     }
@@ -116,7 +116,7 @@ object WarpTunnelManager : Tunnel {
             val b = getBackend(context)
             b.setState(this@WarpTunnelManager, Tunnel.State.DOWN, null)
         } catch (e: Exception) {
-            Log.w(TAG, "Error stopping WARP: ${e.message}")
+            Log.w(TAG, "Error stopping WireGuard tunnel: ${e.message}")
         } finally {
             stopMonitoring()
             _connectionState.value = VpnConnectionState(
@@ -134,7 +134,7 @@ object WarpTunnelManager : Tunnel {
         var endpoint = prefs.getString(PREF_ENDPOINT, null)
 
         if (privKey == null || v4Addr == null || peerPub == null || endpoint == null) {
-            Log.d(TAG, "No cached WARP registration found. Generating new WireGuard keypair and registering...")
+            Log.d(TAG, "No cached Anycast registration found. Generating new WireGuard keypair and registering...")
             val keyPair = KeyPair()
             privKey = keyPair.privateKey.toBase64()
             val pubKey = keyPair.publicKey.toBase64()
@@ -158,7 +158,7 @@ object WarpTunnelManager : Tunnel {
 
             val responseBody = httpClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    throw IllegalStateException("Cloudflare registration failed: HTTP ${resp.code}")
+                    throw IllegalStateException("Anycast relay registration failed: HTTP ${resp.code}")
                 }
                 resp.body?.string() ?: throw IllegalStateException("Empty registration response")
             }
@@ -190,7 +190,7 @@ object WarpTunnelManager : Tunnel {
                 .putString(PREF_ENDPOINT, endpoint)
                 .apply()
 
-            Log.d(TAG, "WARP registered successfully. Assigned IP: $v4Addr")
+            Log.d(TAG, "Anycast relay registered successfully. Assigned IP: $v4Addr")
         }
 
         val addressSection = if (!v6Addr.isNullOrBlank()) {

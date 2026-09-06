@@ -48,6 +48,7 @@ class VpnViewModel @JvmOverloads constructor(
     val language: StateFlow<AppLanguage> = appPreferences.language
     val protocolPreference: StateFlow<ProtocolPreference> = appPreferences.protocolPreference
     val dnsProtection: StateFlow<Boolean> = appPreferences.dnsProtection
+    val vpnDisclosureAccepted: StateFlow<Boolean> = appPreferences.vpnDisclosureAccepted
 
     val connectionState: StateFlow<VpnConnectionState> = UnifiedTunnelManager.connectionState
 
@@ -205,6 +206,10 @@ class VpnViewModel @JvmOverloads constructor(
 
     fun setProtocolPreference(pref: ProtocolPreference) {
         appPreferences.setProtocolPreference(pref)
+    }
+
+    fun setVpnDisclosureAccepted(accepted: Boolean) {
+        appPreferences.setVpnDisclosureAccepted(accepted)
     }
 
     fun clearCache() {

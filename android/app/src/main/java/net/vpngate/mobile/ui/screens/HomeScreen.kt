@@ -29,6 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import net.vpngate.mobile.data.model.ConnectionStatus
 import net.vpngate.mobile.ui.components.HeroConnectButton
 import net.vpngate.mobile.ui.components.StatsBar
+import net.vpngate.mobile.ui.components.VpnDisclosureDialog
 import net.vpngate.mobile.ui.components.map.WorldMapCard
 import net.vpngate.mobile.ui.theme.AppTheme
 import net.vpngate.mobile.ui.viewmodel.VpnViewModel
@@ -61,6 +65,22 @@ fun HomeScreen(
     val selectedServer by viewModel.selectedServer.collectAsState()
     val servers by viewModel.servers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val vpnDisclosureAccepted by viewModel.vpnDisclosureAccepted.collectAsState()
+
+    var showDisclosureDialog by remember { mutableStateOf(false) }
+
+    if (showDisclosureDialog) {
+        VpnDisclosureDialog(
+            onAccept = {
+                showDisclosureDialog = false
+                viewModel.setVpnDisclosureAccepted(true)
+                viewModel.toggleConnection(context, onRequireVpnPermission)
+            },
+            onDismiss = {
+                showDisclosureDialog = false
+            }
+        )
+    }
 
     val currentServer = connectionState.connectedServer ?: selectedServer
     val status = connectionState.status
@@ -95,22 +115,13 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = if (status == ConnectionStatus.CONNECTED) colors.statusConnected else colors.textMuted,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "VPNGATE",
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    letterSpacing = 1.sp
-                )
-            }
+            Text(
+                text = "OPENRELAY",
+                color = colors.textPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                letterSpacing = 1.sp
+            )
 
             IconButton(
                 onClick = { viewModel.loadServers(forceRefresh = true) },
@@ -151,7 +162,13 @@ fun HomeScreen(
         HeroConnectButton(
             status = status,
             onClick = {
-                viewModel.toggleConnection(context, onRequireVpnPermission)
+                if (status == ConnectionStatus.CONNECTED) {
+                    viewModel.toggleConnection(context, onRequireVpnPermission)
+                } else if (!vpnDisclosureAccepted) {
+                    showDisclosureDialog = true
+                } else {
+                    viewModel.toggleConnection(context, onRequireVpnPermission)
+                }
             }
         )
 

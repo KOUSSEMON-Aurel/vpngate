@@ -33,6 +33,7 @@ enum class AppLanguage(val code: String, val displayName: String, val nativeName
 
 enum class ProtocolPreference(val value: String) {
     AUTO("auto"),
+    WIREGUARD("wireguard"),
     WARP("warp"),
     OPENVPN("openvpn");
 
@@ -68,6 +69,9 @@ class AppPreferences private constructor(context: Context) {
     private val _dnsProtection = MutableStateFlow(prefs.getBoolean(KEY_DNS_PROTECTION, true))
     val dnsProtection: StateFlow<Boolean> = _dnsProtection.asStateFlow()
 
+    private val _vpnDisclosureAccepted = MutableStateFlow(prefs.getBoolean(KEY_VPN_DISCLOSURE, false))
+    val vpnDisclosureAccepted: StateFlow<Boolean> = _vpnDisclosureAccepted.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.value).apply()
         _themeMode.value = mode
@@ -93,13 +97,19 @@ class AppPreferences private constructor(context: Context) {
         _dnsProtection.value = enabled
     }
 
+    fun setVpnDisclosureAccepted(accepted: Boolean) {
+        prefs.edit().putBoolean(KEY_VPN_DISCLOSURE, accepted).apply()
+        _vpnDisclosureAccepted.value = accepted
+    }
+
     companion object {
-        private const val PREFS_NAME = "vpngate_app_prefs"
+        private const val PREFS_NAME = "openrelay_app_prefs"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_LANGUAGE = "app_language"
         private const val KEY_PROTOCOL = "protocol_pref"
         private const val KEY_AUTO_RECONNECT = "auto_reconnect"
         private const val KEY_DNS_PROTECTION = "dns_protection"
+        private const val KEY_VPN_DISCLOSURE = "vpn_disclosure_accepted"
 
         @Volatile
         private var INSTANCE: AppPreferences? = null
