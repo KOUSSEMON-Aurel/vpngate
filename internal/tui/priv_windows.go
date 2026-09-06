@@ -7,3 +7,12 @@ package tui
 func detectPrivilege() privState {
 	return privUnknown
 }
+
+func processHasCapNetAdmin() bool {
+	return false
+}
+
+func openvpnHasCapNetAdmin() bool {
+	return false
+}
+
