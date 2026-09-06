@@ -52,6 +52,9 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
@@ -71,6 +74,12 @@ dependencies {
 
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
+
+    // OpenVPN native engine
+    implementation("com.github.nizwar:openvpn_library:b3941ef040")
+
+    // WireGuard / WARP native engine
+    implementation("com.wireguard.android:tunnel:1.0.20230706")
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

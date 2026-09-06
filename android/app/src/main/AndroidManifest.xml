@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -14,6 +16,7 @@
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_vpn_key"
         android:supportsRtl="true"
+        android:extractNativeLibs="true"
         android:theme="@style/Theme.VpnGate">
 
         <activity
@@ -28,13 +31,17 @@
         </activity>
 
         <service
-            android:name=".service.VpnGatewayService"
+            android:name="de.blinkt.openvpn.core.OpenVPNService"
+            android:exported="true"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:exported="false"
-            android:foregroundServiceType="systemExempted">
+            android:foregroundServiceType="specialUse"
+            tools:replace="android:foregroundServiceType">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="VPN tunnel service" />
         </service>
 
     </application>

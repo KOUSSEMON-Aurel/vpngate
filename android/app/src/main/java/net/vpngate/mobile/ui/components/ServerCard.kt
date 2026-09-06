@@ -39,6 +39,7 @@ import net.vpngate.mobile.ui.theme.Rose500
 import net.vpngate.mobile.ui.theme.Zinc100
 import net.vpngate.mobile.ui.theme.Zinc400
 import net.vpngate.mobile.ui.theme.Zinc600
+import net.vpngate.mobile.ui.theme.Zinc700
 import net.vpngate.mobile.ui.theme.Zinc800
 import net.vpngate.mobile.ui.theme.Zinc900
 import java.util.Locale
@@ -83,11 +84,22 @@ fun ServerCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = server.flagEmoji,
-                    fontSize = 28.sp,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Zinc800)
+                        .border(1.dp, Zinc700, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = server.countryBadge,
+                        color = Color(0xFF38BDF8),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -139,18 +151,20 @@ fun ServerCard(
 
                         Spacer(modifier = Modifier.width(10.dp))
 
-                        Icon(
-                            imageVector = Icons.Default.Speed,
-                            contentDescription = null,
-                            tint = Zinc400,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = String.format(Locale.US, "%.1f Mbps", server.speedMbps),
-                            color = Zinc400,
-                            fontSize = 11.sp
-                        )
+                        // Protocol badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (server.isWarp) Color(0xFF0F2E3A) else Zinc800)
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = if (server.isWarp) "WARP WireGuard" else "OpenVPN",
+                                color = if (server.isWarp) Color(0xFF38BDF8) else Zinc400,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }

@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -98,12 +100,55 @@ fun ServersScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            if (isLoading) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    color = Emerald500,
-                    modifier = Modifier.size(20.dp)
-                )
+            IconButton(onClick = { viewModel.loadServers(forceRefresh = true) }) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        color = Emerald500,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh Live Relays",
+                        tint = Zinc100
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Protocol Filter Tabs: ALL, WARP, OPENVPN
+        val protocolFilter by viewModel.protocolFilter.collectAsState()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            net.vpngate.mobile.ui.viewmodel.ProtocolFilter.entries.forEach { filter ->
+                val isSelected = protocolFilter == filter
+                val label = when (filter) {
+                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.ALL -> "All Relays"
+                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.WARP -> "WARP (WireGuard)"
+                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.OPENVPN -> "OpenVPN"
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) Emerald500 else Zinc900)
+                        .border(1.dp, if (isSelected) Emerald500 else Zinc800, RoundedCornerShape(8.dp))
+                        .clickable { viewModel.setProtocolFilter(filter) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = label,
+                        color = if (isSelected) Zinc950 else Zinc100,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
             }
         }
 
@@ -113,7 +158,7 @@ fun ServersScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { viewModel.updateSearchQuery(it) },
-            placeholder = { Text("Search by country or IP…", color = Zinc400, fontSize = 13.sp) },
+            placeholder = { Text("Search country, IP, or node…", color = Zinc400, fontSize = 13.sp) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,

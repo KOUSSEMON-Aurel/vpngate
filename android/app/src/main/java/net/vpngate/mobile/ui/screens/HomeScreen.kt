@@ -48,6 +48,7 @@ import net.vpngate.mobile.ui.theme.Emerald500
 import net.vpngate.mobile.ui.theme.Rose500
 import net.vpngate.mobile.ui.theme.Zinc100
 import net.vpngate.mobile.ui.theme.Zinc400
+import net.vpngate.mobile.ui.theme.Zinc700
 import net.vpngate.mobile.ui.theme.Zinc800
 import net.vpngate.mobile.ui.theme.Zinc900
 import net.vpngate.mobile.ui.theme.Zinc950
@@ -193,11 +194,22 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = currentServer?.flagEmoji ?: "🌐",
-                        fontSize = 30.sp,
-                        modifier = Modifier.padding(end = 14.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Zinc800)
+                            .border(1.dp, Zinc700, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = currentServer?.countryBadge ?: "VPN",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
 
                     Column {
                         Text(
@@ -212,8 +224,9 @@ fun HomeScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         if (currentServer != null) {
+                            val protoLabel = if (currentServer.isWarp) "WireGuard" else "OpenVPN"
                             Text(
-                                text = "${currentServer.ip} • ${currentServer.ping} ms",
+                                text = "${currentServer.ip} • ${currentServer.ping} ms • $protoLabel",
                                 color = Zinc400,
                                 fontSize = 12.sp
                             )
@@ -223,12 +236,32 @@ fun HomeScreen(
 
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Select Server",
-                    tint = Zinc400
+                    contentDescription = "Change Server",
+                    tint = Zinc400,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
 
+        if (status == ConnectionStatus.ERROR && connectionState.errorMessage != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF271317))
+                    .border(1.dp, Color(0xFF881337), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    text = connectionState.errorMessage ?: "Connection error",
+                    color = Rose500,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        } 
+        
         Spacer(modifier = Modifier.height(20.dp))
 
         // Stats Dashboard
