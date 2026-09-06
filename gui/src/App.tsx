@@ -84,8 +84,18 @@ export default function App() {
   const [duration, setDuration] = useState("00:00:00");
   const startTimerRef = useRef<number | null>(null);
 
+  const isConnectingState = (s?: string) =>
+    s === "CONNECTING" ||
+    s === "WAIT" ||
+    s === "AUTH" ||
+    s === "GET_CONFIG" ||
+    s === "ASSIGN_IP" ||
+    s === "ADD_ROUTES" ||
+    s === "TCP_CONNECT" ||
+    s === "RECONNECTING";
+
   const connected = status.state === "CONNECTED";
-  const connecting = status.state === "CONNECTING";
+  const connecting = isConnectingState(status.state);
 
   // Polling backend status & health
   useEffect(() => {
@@ -100,18 +110,24 @@ export default function App() {
       try {
         const s = await api.status();
         setStatus(s);
-        if (s.state === "CONNECTED" && !startTimerRef.current) {
-          startTimerRef.current = s.started_at ? new Date(s.started_at).getTime() : Date.now();
+        if (s.state === "CONNECTED") {
+          if (!startTimerRef.current) {
+            startTimerRef.current = s.started_at ? new Date(s.started_at).getTime() : Date.now();
+          }
+          setError("");
         } else if (s.state === "DISCONNECTED") {
           startTimerRef.current = null;
           setDuration("00:00:00");
+          if (s.error) {
+            setError(s.error);
+          }
         }
       } catch {
         // ignore
       }
     };
     void tick();
-    const id = setInterval(tick, 1500);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -146,26 +162,29 @@ export default function App() {
   }, [connected]);
 
   // Fetch real public IP when disconnected
-  useEffect(() => {
-    if (backend !== "ok") return;
-    const fetchIp = async () => {
+  const fetchPublicIp = useCallback(async () => {
+    if (backend !== "ok" || connected) return;
+    try {
+      const res = await api.ip();
+      if (res.ip) setPublicIp(res.ip);
+    } catch {
       try {
-        const res = await api.ip();
-        if (res.ip) setPublicIp(res.ip);
+        const res = await fetch("https://api.ipify.org?format=json");
+        const data = await res.json();
+        if (data.ip) setPublicIp(data.ip);
       } catch {
-        try {
-          const res = await fetch("https://api.ipify.org?format=json");
-          const data = await res.json();
-          if (data.ip) setPublicIp(data.ip);
-        } catch {
-          // ignore
-        }
+        // ignore
       }
-    };
-    void fetchIp();
-    const id = setInterval(fetchIp, 12000);
-    return () => clearInterval(id);
+    }
   }, [backend, connected]);
+
+  useEffect(() => {
+    if (backend === "ok" && !connected) {
+      void fetchPublicIp();
+      const id = setInterval(fetchPublicIp, 12000);
+      return () => clearInterval(id);
+    }
+  }, [backend, connected, fetchPublicIp]);
 
   // Load servers
   const loadServers = useCallback(async () => {
@@ -199,22 +218,34 @@ export default function App() {
     async (target?: ServerInfo, options: { random?: boolean; source?: string } = {}) => {
       setBusy(true);
       setError("");
+      // Instant visual transition: immediately set connecting state
+      setStatus((prev) => ({
+        ...prev,
+        state: "CONNECTING",
+        hostname: target?.hostname || (options.random ? "Aléatoire" : selectedServer?.hostname || prev.hostname),
+        country: target?.country_long || selectedServer?.country_long || prev.country,
+      }));
       try {
         if (options.random) {
           await api.connect({ random: true });
         } else if (options.source) {
-          await api.connect({ source: options.source });
+          await api.connect({
+            source: options.source,
+            protocol: options.source === "warp" ? "wireguard" : "openvpn",
+          });
         } else if (target) {
           await api.connect({
             hostname: target.hostname,
-            protocol: target.proto,
+            proto: target.proto,
+            protocol: target.source === "warp" ? "wireguard" : "openvpn",
             transport: target.transport,
             source: target.source,
           });
         } else if (selectedServer) {
           await api.connect({
             hostname: selectedServer.hostname,
-            protocol: selectedServer.proto,
+            proto: selectedServer.proto,
+            protocol: selectedServer.source === "warp" ? "wireguard" : "openvpn",
             transport: selectedServer.transport,
             source: selectedServer.source,
           });
@@ -230,7 +261,8 @@ export default function App() {
             });
             await api.connect({
               hostname: sorted[0].hostname,
-              protocol: sorted[0].proto,
+              proto: sorted[0].proto,
+              protocol: sorted[0].source === "warp" ? "wireguard" : "openvpn",
               transport: sorted[0].transport,
               source: sorted[0].source,
             });
@@ -239,6 +271,7 @@ export default function App() {
           }
         }
       } catch (e) {
+        setStatus({ state: "DISCONNECTED" });
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setBusy(false);
@@ -250,14 +283,16 @@ export default function App() {
   const handleDisconnect = useCallback(async () => {
     setBusy(true);
     setError("");
+    setStatus((prev) => ({ ...prev, state: "DISCONNECTED" }));
     try {
       await api.disconnect();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+      void fetchPublicIp();
     }
-  }, []);
+  }, [fetchPublicIp]);
 
   // Save selected server to localStorage
   const pickTargetServer = (s: ServerInfo | null) => {
@@ -460,15 +495,37 @@ export default function App() {
           <div
             style={{
               margin: "16px 28px 0",
-              padding: "9px 12px",
-              backgroundColor: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.25)",
+              padding: "10px 14px",
+              backgroundColor: "rgba(239, 68, 68, 0.12)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
               borderRadius: "6px",
               color: "#fca5a5",
               fontSize: "12px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "10px",
             }}
           >
-            {error}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <ShieldAlert size={14} color="#ef4444" style={{ flexShrink: 0 }} />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={() => setError("")}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#fca5a5",
+                cursor: "pointer",
+                padding: "2px 4px",
+                lineHeight: 1,
+                fontSize: "13px",
+              }}
+              title="Fermer"
+            >
+              ✕
+            </button>
           </div>
         )}
 
@@ -599,11 +656,11 @@ export default function App() {
                 className={`btn-solid-action ${
                   connected ? "disconnect-mode" : connecting ? "connecting-mode" : ""
                 }`}
-                disabled={busy || backend !== "ok"}
+                disabled={busy || backend !== "ok" || connecting}
                 onClick={() => {
                   if (connected) {
                     void handleDisconnect();
-                  } else {
+                  } else if (!connecting) {
                     void handleConnect();
                   }
                 }}
@@ -929,8 +986,26 @@ export default function App() {
                                 className="btn-select-relay"
                                 disabled={busy || connected}
                                 onClick={() => pickTargetServer(s)}
+                                title="Définir comme cible sur l'accueil"
                               >
                                 {isCurrentTarget ? "Sélectionné" : "Choisir"}
+                              </button>
+                              <button
+                                className="btn-select-relay"
+                                disabled={busy || connected}
+                                onClick={() => {
+                                  pickTargetServer(s);
+                                  void handleConnect(s);
+                                }}
+                                title="Se connecter immédiatement"
+                                style={{
+                                  backgroundColor: connected && (status.hostname === s.hostname || status.ip_addr === s.ip) ? "var(--accent-green)" : "rgba(34, 197, 94, 0.12)",
+                                  borderColor: "rgba(34, 197, 94, 0.3)",
+                                  color: connected && (status.hostname === s.hostname || status.ip_addr === s.ip) ? "#000" : "var(--accent-green)",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {connected && (status.hostname === s.hostname || status.ip_addr === s.ip) ? "Actif" : "Connecter"}
                               </button>
                             </div>
                           </div>

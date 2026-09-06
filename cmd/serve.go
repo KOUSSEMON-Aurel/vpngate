@@ -55,11 +55,12 @@ type serveAPI struct {
 	// fetchServers returns the server list to filter; injectable for tests.
 	fetchServers func(opts vpn.ListOptions) ([]vpn.Server, error)
 
-	mu      sync.Mutex
-	sup     *supervisor
+	mu  sync.Mutex
+	sup *supervisor
 	// done is closed when the current supervisor's run loop exits.
-	done    chan struct{}
-	monitor *vpn.Monitor
+	done      chan struct{}
+	monitor   *vpn.Monitor
+	lastError string
 }
 
 // connectRequest is the body of POST /api/connect. hostname and random
@@ -68,6 +69,7 @@ type serveAPI struct {
 type connectRequest struct {
 	HostName  string `json:"hostname"`
 	Random    bool   `json:"random"`
+	Proto     string `json:"proto"`
 	Protocol  string `json:"protocol"`
 	Transport string `json:"transport"`
 	Country   string `json:"country"`
@@ -97,6 +99,7 @@ type statusResponse struct {
 	daemon.Snapshot
 	Protocol  string `json:"protocol,omitempty"`
 	Transport string `json:"transport,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 func runServe(cmd *cobra.Command, _ []string) error {
@@ -318,6 +321,7 @@ func (a *serveAPI) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	sup := a.sup
+	lastErr := a.lastError
 	a.mu.Unlock()
 
 	if sup != nil {
@@ -326,31 +330,39 @@ func (a *serveAPI) handleStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap, Protocol: sup.protocol, Transport: sup.transport})
+		sup.mu.Lock()
+		supErr := sup.lastError
+		sup.mu.Unlock()
+		if snap.State == "CONNECTED" {
+			lastErr = ""
+		} else if supErr != "" {
+			lastErr = supErr
+		}
+		writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap, Protocol: sup.protocol, Transport: sup.transport, Error: lastErr})
 		return
 	}
 
 	state, err := daemon.Load()
-	if err == nil && daemon.IsAlive(state.PID) {
-		snap, err := daemon.SendStatus(state.ControlAddr, 2*time.Second)
-		if err == nil {
-			writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap})
-			return
+	if err == nil {
+		if state.PID == os.Getpid() {
+			// Stale state from this serve process's previous supervisor
+			_ = daemon.Remove()
+		} else if daemon.IsAlive(state.PID) {
+			snap, err := daemon.SendStatus(state.ControlAddr, 500*time.Millisecond)
+			if err == nil {
+				writeJSON(w, http.StatusOK, statusResponse{Snapshot: snap, Error: lastErr})
+				return
+			}
+			_ = daemon.Remove()
+		} else {
+			_ = daemon.Remove()
 		}
-		writeJSON(w, http.StatusOK, statusResponse{
-			Snapshot: daemon.Snapshot{
-				State:       "CONNECTED",
-				HostName:    state.HostName,
-				IPAddr:      state.IPAddr,
-				CountryLong: state.CountryLong,
-				StartedAt:   state.StartedAt,
-				PID:         state.PID,
-			},
-		})
-		return
 	}
 
-	writeJSON(w, http.StatusOK, statusResponse{Snapshot: daemon.Snapshot{State: "DISCONNECTED"}})
+	writeJSON(w, http.StatusOK, statusResponse{
+		Snapshot: daemon.Snapshot{State: "DISCONNECTED"},
+		Error:    lastErr,
+	})
 }
 
 func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
@@ -368,8 +380,18 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 	busy := a.sup != nil
 	a.mu.Unlock()
 	if !busy {
-		if state, err := daemon.Load(); err == nil && daemon.IsAlive(state.PID) {
-			busy = true
+		if state, err := daemon.Load(); err == nil {
+			if state.PID == os.Getpid() {
+				_ = daemon.Remove()
+			} else if daemon.IsAlive(state.PID) {
+				if _, err := daemon.SendStatus(state.ControlAddr, 500*time.Millisecond); err == nil {
+					busy = true
+				} else {
+					_ = daemon.Remove()
+				}
+			} else {
+				_ = daemon.Remove()
+			}
 		}
 	}
 	if busy {
@@ -382,29 +404,52 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "fetching servers: "+err.Error())
 		return
 	}
+
+	proto := strings.ToLower(req.Proto)
 	protocol := strings.ToLower(req.Protocol)
 	transport := strings.ToLower(req.Transport)
-	filtered := filterAPIServers(servers, req.Country, protocol, transport, req.Source, 0, 0)
-	if len(filtered) == 0 {
-		writeError(w, http.StatusNotFound, "no servers matched the filters")
-		return
+	source := strings.ToLower(req.Source)
+
+	// If protocol was sent as "udp" or "tcp", normalize to proto filter + openvpn protocol
+	if protocol == "udp" || protocol == "tcp" {
+		if proto == "" {
+			proto = protocol
+		}
+		protocol = vpn.ProtocolOpenVPN
+	}
+	if protocol == "" {
+		if source == vpn.SourceWarp {
+			protocol = vpn.ProtocolWireGuard
+		} else {
+			protocol = vpn.ProtocolOpenVPN
+		}
 	}
 
 	var initial vpn.Server
-	if req.Random {
-		initial = filtered[rand.Intn(len(filtered))]
-	} else {
-		found := false
-		for _, s := range filtered {
+	var filtered []vpn.Server
+
+	if req.HostName != "" {
+		for _, s := range servers {
 			if s.HostName == req.HostName {
 				initial = s
-				found = true
+				filtered = []vpn.Server{s}
 				break
 			}
 		}
-		if !found {
+		if initial.HostName == "" {
 			writeError(w, http.StatusNotFound, fmt.Sprintf("server %q was not found", req.HostName))
 			return
+		}
+	} else {
+		filtered = filterAPIServers(servers, req.Country, proto, transport, req.Source, 0, 0)
+		if len(filtered) == 0 {
+			writeError(w, http.StatusNotFound, "no servers matched the filters")
+			return
+		}
+		if req.Random {
+			initial = filtered[rand.Intn(len(filtered))]
+		} else {
+			initial = filtered[0]
 		}
 	}
 
@@ -427,6 +472,7 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "a connection is already running; disconnect first")
 		return
 	}
+	a.lastError = ""
 	a.sup, a.done = sup, done
 	if a.monitor != nil {
 		a.monitor.Pause()
@@ -446,7 +492,12 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 			a.mu.Unlock()
 			sup.shutdown()
 		}()
-		_ = sup.run()
+		runErr := sup.run()
+		if runErr != nil {
+			a.mu.Lock()
+			a.lastError = runErr.Error()
+			a.mu.Unlock()
+		}
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"state": "CONNECTING"})
@@ -477,19 +528,23 @@ func (a *serveAPI) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		if a.sup == sup {
 			a.sup, a.done = nil, nil
 		}
+		a.lastError = ""
 		a.mu.Unlock()
+		_ = daemon.Remove()
 		writeJSON(w, http.StatusOK, map[string]string{"state": "DISCONNECTED"})
 		return
 	}
 
 	state, err := daemon.Load()
-	if err == nil && daemon.IsAlive(state.PID) {
-		if err := daemon.SendStop(state.ControlAddr, 5*time.Second); err != nil {
-			if proc, ferr := os.FindProcess(state.PID); ferr == nil {
-				_ = proc.Kill()
+	if err == nil {
+		if daemon.IsAlive(state.PID) && state.PID != os.Getpid() {
+			if err := daemon.SendStop(state.ControlAddr, 5*time.Second); err != nil {
+				if proc, ferr := os.FindProcess(state.PID); ferr == nil {
+					_ = proc.Kill()
+				}
 			}
-			_ = daemon.Remove()
 		}
+		_ = daemon.Remove()
 		writeJSON(w, http.StatusOK, map[string]string{"state": "DISCONNECTED"})
 		return
 	}

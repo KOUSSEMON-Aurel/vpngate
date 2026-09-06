@@ -32,11 +32,13 @@ export interface StatusInfo {
   pid?: number;
   protocol?: string;
   transport?: string;
+  error?: string;
 }
 
 export interface ConnectRequest {
   hostname?: string;
   random?: boolean;
+  proto?: string;
   protocol?: string;
   transport?: string;
   country?: string;

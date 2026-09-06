@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
 	"net"
 	"os"
+	osexec "os/exec"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -33,11 +37,15 @@ type supervisor struct {
 	logFile   *os.File
 	control   *daemon.ControlServer
 
-	mu        sync.Mutex
-	server    vpn.Server
-	startedAt time.Time
-	mgmt      *daemon.Management
-	stopping  bool
+	mu           sync.Mutex
+	server       vpn.Server
+	startedAt    time.Time
+	mgmt         *daemon.Management
+	cmd          *osexec.Cmd
+	warpCancel   context.CancelFunc
+	stopping     bool
+	wasConnected bool
+	lastError    string
 	// stateMu serializes management "state" queries. The management socket
 	// is request/response and its bufio.Reader is not safe for concurrent
 	// reads, and both waitForConnected (during a connect that can now take
@@ -126,24 +134,52 @@ func (s *supervisor) run() error {
 		_ = os.Remove(daemon.ConfigPath())
 	}()
 
+	attempts := 0
+	const maxInitialAttempts = 3
+
 	for {
 		s.mu.Lock()
 		if s.stopping {
 			s.mu.Unlock()
 			return nil
 		}
-		if s.random {
+		if s.random && len(s.vpnServers) > 0 {
 			s.server = s.vpnServers[rand.Intn(len(s.vpnServers))]
 		}
 		server := s.server
 		s.mu.Unlock()
 
+		attempts++
 		err := s.connectOnce(server)
 		if err != nil {
-			log.Error().Err(err).Msg("daemon connection attempt failed")
-			if !s.reconnect {
-				return err
+			s.mu.Lock()
+			s.lastError = err.Error()
+			wasConnected := s.wasConnected
+			stopping := s.stopping
+			s.mu.Unlock()
+
+			if stopping {
+				return nil
 			}
+
+			log.Error().Err(err).Msg("daemon connection attempt failed")
+
+			// If the connection was never established:
+			if !wasConnected {
+				// For a manually chosen server, do not repeat the same failed server indefinitely
+				if !s.random {
+					return err
+				}
+				if attempts >= maxInitialAttempts || attempts >= len(s.vpnServers) {
+					return fmt.Errorf("all %d connection attempts failed (last: %w)", attempts, err)
+				}
+			} else {
+				// If it dropped after being successfully connected:
+				if !s.reconnect {
+					return err
+				}
+			}
+
 			// Back off before retrying: a fast-failing attempt (e.g. an
 			// instantly rejected server) must not spin this loop at 100% CPU.
 			for i := 0; i < 10; i++ {
@@ -155,12 +191,14 @@ func (s *supervisor) run() error {
 				}
 				time.Sleep(200 * time.Millisecond)
 			}
+			continue
 		}
 
 		s.mu.Lock()
 		stopping := s.stopping
+		wasConnected := s.wasConnected
 		s.mu.Unlock()
-		if stopping || !s.reconnect {
+		if stopping || !s.reconnect || !wasConnected {
 			return nil
 		}
 	}
@@ -171,7 +209,7 @@ func (s *supervisor) run() error {
 // exits (either on its own or because handleStop signaled it).
 func (s *supervisor) connectOnce(server vpn.Server) error {
 	if server.Source == vpn.SourceWarp {
-		return errors.New("WARP does not support background (daemon) mode")
+		return s.connectWarp(server)
 	}
 	if s.protocol != "" && s.protocol != vpn.ProtocolOpenVPN {
 		return fmt.Errorf("background mode only supports the openvpn protocol (got %q)", s.protocol)
@@ -198,6 +236,17 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 		return fmt.Errorf("starting openvpn: %w", err)
 	}
 
+	s.mu.Lock()
+	s.cmd = cmd
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.cmd == cmd {
+			s.cmd = nil
+		}
+		s.mu.Unlock()
+	}()
+
 	mgmt, err := s.waitForManagement(mgmtAddr, 30*time.Second)
 	if err != nil {
 		_ = cmd.Process.Kill()
@@ -205,7 +254,7 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 		if errors.Is(err, errTunnelStopped) {
 			return nil
 		}
-		return err
+		return parseOpenVpnFailure(daemon.LogPath(), err)
 	}
 
 	startedAt := time.Now()
@@ -247,8 +296,12 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 		_ = mgmt.Close()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return err
+		return parseOpenVpnFailure(daemon.LogPath(), err)
 	}
+
+	s.mu.Lock()
+	s.wasConnected = true
+	s.mu.Unlock()
 
 	if err := daemon.Save(daemon.State{
 		PID:         os.Getpid(),
@@ -276,6 +329,76 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 	s.mu.Unlock()
 
 	return waitErr
+}
+
+// connectWarp brings up a Cloudflare WARP tunnel in the background.
+func (s *supervisor) connectWarp(server vpn.Server) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	if s.stopping {
+		s.mu.Unlock()
+		cancel()
+		return nil
+	}
+	s.warpCancel = cancel
+	s.server = server
+	s.mu.Unlock()
+	defer func() {
+		cancel()
+		s.mu.Lock()
+		s.warpCancel = nil
+		s.mu.Unlock()
+	}()
+
+	err := vpn.WarpConnect(ctx, flagWgcfConfig, s.logFile, func() {
+		s.mu.Lock()
+		s.startedAt = time.Now()
+		s.wasConnected = true
+		s.mu.Unlock()
+
+		_ = daemon.Save(daemon.State{
+			PID:         os.Getpid(),
+			ControlAddr: s.control.Addr(),
+			HostName:    server.HostName,
+			IPAddr:      server.IPAddr,
+			CountryLong: server.CountryLong,
+			StartedAt:   s.startedAt,
+		})
+		log.Info().Msgf("Connected in background to Cloudflare WARP (%s)", server.IPAddr)
+	})
+
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+// parseOpenVpnFailure inspects recent lines of OpenVPN's log file to return
+// a user-actionable error instead of cryptic socket disconnects.
+func parseOpenVpnFailure(logPath string, originalErr error) error {
+	data, err := os.ReadFile(logPath)
+	if err != nil || len(data) == 0 {
+		return originalErr
+	}
+	lines := strings.Split(string(data), "\n")
+	start := 0
+	if len(lines) > 40 {
+		start = len(lines) - 40
+	}
+	recent := strings.Join(lines[start:], "\n")
+	lower := strings.ToLower(recent)
+
+	switch {
+	case strings.Contains(recent, "AUTH_FAILED"):
+		return fmt.Errorf("relay refused connection (AUTH_FAILED: server is full or credentials expired)")
+	case strings.Contains(lower, "cannot open tun/tap") || strings.Contains(lower, "tunsetiff") || strings.Contains(lower, "permission denied"):
+		return fmt.Errorf("openvpn needs elevated privileges (CAP_NET_ADMIN) to create a tun interface")
+	case strings.Contains(recent, "TLS Error") || strings.Contains(recent, "TLS key negotiation failed"):
+		return fmt.Errorf("TLS handshake timeout: relay is unreachable or unresponsive")
+	case strings.Contains(lower, "cannot resolve host address") || strings.Contains(lower, "no such host"):
+		return fmt.Errorf("DNS resolution failed for relay address")
+	}
+	return originalErr
 }
 
 // reserveLoopbackAddr picks a free loopback TCP port by opening then
@@ -368,15 +491,29 @@ func (s *supervisor) handleStatus() (daemon.Snapshot, error) {
 	mgmt := s.mgmt
 	server := s.server
 	startedAt := s.startedAt
+	wasConnected := s.wasConnected
+	isWarp := server.Source == vpn.SourceWarp
 	s.mu.Unlock()
 
 	state := "CONNECTING"
-	if mgmt != nil {
+	if isWarp {
+		if wasConnected {
+			state = "CONNECTED"
+		}
+	} else if mgmt != nil {
 		s.stateMu.Lock()
 		st, err := mgmt.State()
 		s.stateMu.Unlock()
 		if err == nil {
-			state = st
+			switch st {
+			case "CONNECTED":
+				state = "CONNECTED"
+			case "EXITING":
+				state = "DISCONNECTED"
+			default:
+				// Any in-progress handshake state (WAIT, AUTH, GET_CONFIG, ASSIGN_IP, ADD_ROUTES, TCP_CONNECT)
+				state = "CONNECTING"
+			}
 		}
 	}
 
@@ -399,9 +536,26 @@ func (s *supervisor) handleStop() {
 	s.mu.Lock()
 	s.stopping = true
 	mgmt := s.mgmt
+	cmd := s.cmd
+	warpCancel := s.warpCancel
 	s.mu.Unlock()
 
+	if warpCancel != nil {
+		warpCancel()
+	}
 	if mgmt != nil {
 		_ = mgmt.Disconnect()
+	}
+	if cmd != nil && cmd.Process != nil {
+		go func() {
+			time.Sleep(1 * time.Second)
+			s.mu.Lock()
+			stopping := s.stopping
+			activeCmd := s.cmd
+			s.mu.Unlock()
+			if stopping && activeCmd == cmd && cmd.Process != nil {
+				_ = cmd.Process.Signal(syscall.SIGTERM)
+			}
+		}()
 	}
 }

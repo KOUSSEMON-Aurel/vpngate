@@ -143,3 +143,34 @@ func TestServeConnectErrors(t *testing.T) {
 	rec = doRequest(api, http.MethodPost, "/api/disconnect", "")
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// TestServeConnectProtocolNormalization verifies that passing proto ("udp" or "tcp")
+// or protocol ("openvpn") is correctly handled without rejecting the connection.
+func TestServeConnectProtocolNormalization(t *testing.T) {
+	api := newTestServeAPI(t)
+
+	// Sending protocol: "udp" should normalize and succeed
+	rec := doRequest(api, http.MethodPost, "/api/connect", `{"hostname":"jp-udp","protocol":"udp"}`)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+
+	_ = doRequest(api, http.MethodPost, "/api/disconnect", "")
+
+	// Sending explicit proto and protocol should succeed
+	rec = doRequest(api, http.MethodPost, "/api/connect", `{"hostname":"fr-tcp","proto":"tcp","protocol":"openvpn"}`)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+
+	_ = doRequest(api, http.MethodPost, "/api/disconnect", "")
+}
+
+// TestServeStatusReportsError verifies that lastError is carried in /api/status.
+func TestServeStatusReportsError(t *testing.T) {
+	api := newTestServeAPI(t)
+	api.lastError = "relay refused connection (AUTH_FAILED)"
+
+	rec := doRequest(api, http.MethodGet, "/api/status", "")
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var status statusResponse
+	assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &status))
+	assert.Equal(t, "DISCONNECTED", status.State)
+	assert.Equal(t, "relay refused connection (AUTH_FAILED)", status.Error)
+}
