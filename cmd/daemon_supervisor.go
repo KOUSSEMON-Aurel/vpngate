@@ -144,6 +144,17 @@ func (s *supervisor) run() error {
 			if !s.reconnect {
 				return err
 			}
+			// Back off before retrying: a fast-failing attempt (e.g. an
+			// instantly rejected server) must not spin this loop at 100% CPU.
+			for i := 0; i < 10; i++ {
+				s.mu.Lock()
+				stopping := s.stopping
+				s.mu.Unlock()
+				if stopping {
+					return nil
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
 		}
 
 		s.mu.Lock()
