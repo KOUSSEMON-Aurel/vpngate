@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/davegallant/vpngate/pkg/daemon"
+	"github.com/davegallant/vpngate/pkg/killswitch"
 	"github.com/davegallant/vpngate/pkg/vpn"
 )
 
@@ -28,6 +29,8 @@ type supervisor struct {
 	vpnServers []vpn.Server
 	random     bool
 	reconnect  bool
+	killSwitch bool
+	ks         killswitch.KillSwitch
 	// protocol and transport select the tunnel implementation and (for
 	// vpnbook servers) the OpenVPN transport. They come from flags on the
 	// re-exec'd daemon path and from the HTTP API on the serve path, so
@@ -119,6 +122,7 @@ func runSupervisor() error {
 		reconnect:  flagReconnect,
 		protocol:   flagProtocol,
 		transport:  flagTransport,
+		killSwitch: flagKillSwitch,
 		logFile:    logFile,
 		server:     initial,
 	}
@@ -133,6 +137,12 @@ func (s *supervisor) run() error {
 		_ = daemon.Remove()
 		_ = os.Remove(daemon.ConfigPath())
 	}()
+
+	if s.killSwitch {
+		s.ks = killswitch.New()
+		defer func() { _ = s.ks.Disable(context.Background()) }()
+		log.Info().Msgf("killswitch: daemon supervisor engaged (%s)", s.ks.Name())
+	}
 
 	attempts := 0
 	const maxInitialAttempts = 3
@@ -231,6 +241,12 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 		return err
 	}
 
+	if s.ks != nil {
+		if err := s.ks.Enable(context.Background(), server); err != nil {
+			log.Warn().Msgf("killswitch: failed to pre-enable rules: %v", err)
+		}
+	}
+
 	cmd, err := vpn.ClientFor(server).ConnectDetached(server, daemon.ConfigPath(), mgmtAddr, s.logFile, daemon.DetachAttr())
 	if err != nil {
 		return fmt.Errorf("starting openvpn: %w", err)
@@ -302,6 +318,10 @@ func (s *supervisor) connectOnce(server vpn.Server) error {
 	s.mu.Lock()
 	s.wasConnected = true
 	s.mu.Unlock()
+
+	if s.ks != nil {
+		_ = s.ks.OnTunnelUp(context.Background(), "tun")
+	}
 
 	if err := daemon.Save(daemon.State{
 		PID:         os.Getpid(),
@@ -542,6 +562,9 @@ func (s *supervisor) handleStop() {
 
 	if warpCancel != nil {
 		warpCancel()
+	}
+	if s.ks != nil {
+		_ = s.ks.Disable(context.Background())
 	}
 	if mgmt != nil {
 		_ = mgmt.Disconnect()

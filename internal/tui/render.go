@@ -600,6 +600,13 @@ func (m *model) footer(w int) string {
 			}
 			b.WriteString(styleDim.Render(fmt.Sprintf("  [p] health %s", label)))
 		}
+		if m.killSwitch != nil {
+			if m.killSwitch.Load() {
+				b.WriteString(styleWorking.Render("  [x] killswitch: on"))
+			} else {
+				b.WriteString(styleDim.Render("  [x] killswitch: off"))
+			}
+		}
 	} else {
 		b.WriteString(" [↑/↓ j/k] move")
 		if m.mode == ModeSelect {
@@ -607,6 +614,13 @@ func (m *model) footer(w int) string {
 		}
 		b.WriteString("  [w] working-only")
 		b.WriteString(fmt.Sprintf("  [s] sort: %s", sortModeName(m.sortMode)))
+		if m.killSwitch != nil {
+			if m.killSwitch.Load() {
+				b.WriteString(styleWorking.Render("  [x] killswitch: on"))
+			} else {
+				b.WriteString(styleDim.Render("  [x] killswitch: off"))
+			}
+		}
 		b.WriteString("  [r] re-check")
 		b.WriteString("  [/] search")
 		b.WriteString("  [q] quit")

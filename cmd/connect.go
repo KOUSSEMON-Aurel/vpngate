@@ -22,6 +22,7 @@ import (
 
 	"github.com/davegallant/vpngate/internal/tui"
 	"github.com/davegallant/vpngate/pkg/daemon"
+	"github.com/davegallant/vpngate/pkg/killswitch"
 	"github.com/davegallant/vpngate/pkg/vpn"
 	"github.com/spf13/cobra"
 )
@@ -42,11 +43,13 @@ var (
 	flagTunnelHealth   bool
 	flagProtocol       string
 	flagTransport      string
+	flagKillSwitch     bool
 )
 
 func init() {
 	connectCmd.Flags().BoolVarP(&flagRandom, "random", "r", false, "connect to a random server")
 	connectCmd.Flags().BoolVarP(&flagReconnect, "reconnect", "t", false, "continually attempt to connect to the server")
+	connectCmd.Flags().BoolVarP(&flagKillSwitch, "kill-switch", "k", false, "activate fail-safe kill switch to block traffic outside the vpn tunnel")
 	connectCmd.Flags().StringVarP(&flagProxy, "proxy", "p", "", "provide a http/https proxy server to make requests through (i.e. http://127.0.0.1:8080)")
 	connectCmd.Flags().StringVarP(&flagSocks5Proxy, "socks5", "s", "", "provide a socks5 proxy server to make requests through (i.e. 127.0.0.1:1080)")
 	connectCmd.Flags().StringVar(&flagCountry, "country", "", "filter by country name or country code (i.e. Japan or jp)")
@@ -197,6 +200,13 @@ var connectCmd = &cobra.Command{
 			return startDaemon(serverSelected)
 		}
 
+		var ks killswitch.KillSwitch
+		if flagKillSwitch {
+			ks = killswitch.New()
+			defer func() { _ = ks.Disable(context.Background()) }()
+			log.Info().Msgf("killswitch: activated (%s) — blocking traffic outside tunnel", ks.Name())
+		}
+
 		for {
 			if flagRandom {
 				// Select a random server
@@ -204,7 +214,7 @@ var connectCmd = &cobra.Command{
 			}
 
 			log.Info().Msgf("Connecting to %s (%s) in %s", serverSelected.HostName, serverSelected.IPAddr, serverSelected.CountryLong)
-			err = connectWithRetry(cmd.Context(), orderedCandidates(*vpnServers, serverSelected, probeResults), nil, tunnelHealthFromFlag())
+			err = connectWithRetry(cmd.Context(), orderedCandidates(*vpnServers, serverSelected, probeResults), nil, tunnelHealthFromFlag(), ks)
 
 			if !flagReconnect {
 				if err != nil {
@@ -231,9 +241,14 @@ const maxConnectAttempts = 8
 // initialize within connectStartupDeadline is abandoned and the next
 // candidate is tried. Once a tunnel is up the function blocks until ctx is
 // canceled (the user stops the connection) or the tunnel drops.
-func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(string), health *tunnelHealth) error {
+func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(string), health *tunnelHealth, ksOpt ...killswitch.KillSwitch) error {
 	if len(candidates) == 0 {
 		return errors.New("no servers to try")
+	}
+
+	var ks killswitch.KillSwitch
+	if len(ksOpt) > 0 {
+		ks = ksOpt[0]
 	}
 
 	attempts := min(len(candidates), maxConnectAttempts)
@@ -250,7 +265,7 @@ func connectWithRetry(ctx context.Context, candidates []vpn.Server, emit func(st
 		}
 		log.Info().Msgf("Attempt %d/%d: connecting to %s (%s)", i+1, attempts, s.HostName, s.IPAddr)
 
-		result := connectAttempt(ctx, s, emit, health)
+		result := connectAttempt(ctx, s, emit, health, ks)
 
 		switch {
 		case result.err == nil && ctx.Err() == nil:
@@ -304,9 +319,20 @@ type connectAttemptResult struct {
 // when the relay sent AUTH_FAILED. Any other error means the relay never
 // produced a working tunnel within the startup deadline or exited
 // abnormally before doing so.
-func connectAttempt(ctx context.Context, s vpn.Server, emit func(string), health *tunnelHealth) connectAttemptResult {
+func connectAttempt(ctx context.Context, s vpn.Server, emit func(string), health *tunnelHealth, ksOpt ...killswitch.KillSwitch) connectAttemptResult {
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	var ks killswitch.KillSwitch
+	if len(ksOpt) > 0 {
+		ks = ksOpt[0]
+	}
+
+	if ks != nil {
+		if err := ks.Enable(attemptCtx, s); err != nil && emit != nil {
+			emit(fmt.Sprintf("[killswitch] WARNING: %v", err))
+		}
+	}
 
 	tw := &trackedWriter{emit: emit, initDone: make(chan struct{}), authDone: make(chan struct{})}
 
@@ -322,6 +348,9 @@ func connectAttempt(ctx context.Context, s vpn.Server, emit func(string), health
 		// run until openvpn exits or the user stops it. The health
 		// monitor watches for a silently dead tunnel and cancels the
 		// attempt so the retry chain picks the next relay.
+		if ks != nil {
+			_ = ks.OnTunnelUp(attemptCtx, "tun")
+		}
 		if emit != nil {
 			emit("Tunnel up; verifying connectivity through it…")
 			emit(fmt.Sprintf("[vpngate] connected via %s", s.HostName))
@@ -801,8 +830,21 @@ func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
 		health = &tunnelHealth{pause: healthPause}
 	}
 
+	killSwitchActive := &atomic.Bool{}
+	if flagKillSwitch {
+		killSwitchActive.Store(true)
+	}
+
 	connectFn := func(connCtx context.Context, s vpn.Server, results map[string]vpn.ProbeResult, emit func(string)) error {
-		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, results), emit, health); err != nil {
+		var ks killswitch.KillSwitch
+		if killSwitchActive.Load() {
+			ks = killswitch.New()
+			defer func() { _ = ks.Disable(context.Background()) }()
+			if emit != nil {
+				emit(fmt.Sprintf("[killswitch] active (%s) — blocking traffic outside tunnel", ks.Name()))
+			}
+		}
+		if err := connectWithRetry(connCtx, orderedCandidates(servers, s, results), emit, health, ks); err != nil {
 			return fmt.Errorf("%w%s", err, privilegeHint(err))
 		}
 		return nil
@@ -817,6 +859,7 @@ func runTuiConnect(ctx context.Context, servers []vpn.Server) error {
 		Watch:       flagWatch,
 		ConnectFn:   connectFn,
 		HealthPause: healthPause,
+		KillSwitch:  killSwitchActive,
 	})
 	return err
 }
@@ -916,6 +959,9 @@ func forwardableConnectArgs() []string {
 	}
 	if flagHealthTimeout != 5*time.Second {
 		args = append(args, "--health-timeout", flagHealthTimeout.String())
+	}
+	if flagKillSwitch {
+		args = append(args, "--kill-switch")
 	}
 	return args
 }

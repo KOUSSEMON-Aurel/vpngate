@@ -619,3 +619,17 @@ func TestValidateTransportFlag(t *testing.T) {
 	flagTransport = ""
 	flagProtocol = ""
 }
+
+// TestForwardableConnectArgsKillSwitch verifies that --kill-switch is forwarded
+// to the re-exec'd daemon child.
+func TestForwardableConnectArgsKillSwitch(t *testing.T) {
+	flagKillSwitch = false
+	args := forwardableConnectArgs()
+	assert.NotContains(t, args, "--kill-switch")
+
+	flagKillSwitch = true
+	defer func() { flagKillSwitch = false }()
+	args = forwardableConnectArgs()
+	assert.Contains(t, args, "--kill-switch")
+}
+

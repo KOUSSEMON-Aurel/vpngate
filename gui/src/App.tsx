@@ -300,11 +300,12 @@ export default function App() {
       }));
       try {
         if (options.random) {
-          await api.connect({ random: true });
+          await api.connect({ random: true, kill_switch: killSwitch });
         } else if (options.source) {
           await api.connect({
             source: options.source,
             protocol: options.source === "warp" ? "wireguard" : "openvpn",
+            kill_switch: killSwitch,
           });
         } else if (target) {
           await api.connect({
@@ -313,6 +314,7 @@ export default function App() {
             protocol: target.source === "warp" ? "wireguard" : "openvpn",
             transport: target.transport,
             source: target.source,
+            kill_switch: killSwitch,
           });
         } else if (selectedServer) {
           await api.connect({
@@ -321,6 +323,7 @@ export default function App() {
             protocol: selectedServer.source === "warp" ? "wireguard" : "openvpn",
             transport: selectedServer.transport,
             source: selectedServer.source,
+            kill_switch: killSwitch,
           });
         } else {
           // Automatic Mode: Connect to best online server (or lowest ping)
@@ -338,9 +341,10 @@ export default function App() {
               protocol: sorted[0].source === "warp" ? "wireguard" : "openvpn",
               transport: sorted[0].transport,
               source: sorted[0].source,
+              kill_switch: killSwitch,
             });
           } else {
-            await api.connect({ random: true });
+            await api.connect({ random: true, kill_switch: killSwitch });
           }
         }
       } catch (e) {
@@ -350,7 +354,7 @@ export default function App() {
         setBusy(false);
       }
     },
-    [selectedServer, enrichedServers]
+    [selectedServer, enrichedServers, killSwitch]
   );
 
   const handleDisconnect = useCallback(async () => {

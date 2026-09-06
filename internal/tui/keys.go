@@ -44,6 +44,11 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.healthPause.Store(!m.healthPause.Load())
 			}
 			return m, m.tickIfNeeded()
+		case "x", "K":
+			if m.killSwitch != nil {
+				m.killSwitch.Store(!m.killSwitch.Load())
+			}
+			return m, m.tickIfNeeded()
 		}
 
 		// Inside the log panel only panel keys apply: arrows scroll, esc or
@@ -154,6 +159,10 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.orderRound = ^uint64(0)
 	case "r":
 		m.monitor.ForceRound()
+	case "x", "K":
+		if m.killSwitch != nil {
+			m.killSwitch.Store(!m.killSwitch.Load())
+		}
 
 	default:
 		if m.searching && len(msg.String()) == 1 {

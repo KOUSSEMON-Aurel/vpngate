@@ -44,6 +44,7 @@ export interface ConnectRequest {
   country?: string;
   source?: string;
   reconnect?: boolean;
+  kill_switch?: boolean;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,14 +68,15 @@ type serveAPI struct {
 // are mutually exclusive selectors; the remaining fields filter the
 // candidate list first. reconnect defaults to true when omitted.
 type connectRequest struct {
-	HostName  string `json:"hostname"`
-	Random    bool   `json:"random"`
-	Proto     string `json:"proto"`
-	Protocol  string `json:"protocol"`
-	Transport string `json:"transport"`
-	Country   string `json:"country"`
-	Source    string `json:"source"`
-	Reconnect *bool  `json:"reconnect"`
+	HostName   string `json:"hostname"`
+	Random     bool   `json:"random"`
+	Proto      string `json:"proto"`
+	Protocol   string `json:"protocol"`
+	Transport  string `json:"transport"`
+	Country    string `json:"country"`
+	Source     string `json:"source"`
+	Reconnect  *bool  `json:"reconnect"`
+	KillSwitch bool   `json:"kill_switch"`
 }
 
 // apiServer is the JSON view of a relay for the GUI; OpenVpnConfigData is
@@ -457,7 +459,7 @@ func (a *serveAPI) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if req.Reconnect != nil {
 		reconnect = *req.Reconnect
 	}
-	sup, err := newServeSupervisor(filtered, initial, protocol, transport, req.Random, reconnect)
+	sup, err := newServeSupervisor(filtered, initial, protocol, transport, req.Random, reconnect, req.KillSwitch)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -573,7 +575,7 @@ func (a *serveAPI) handleLogs(w http.ResponseWriter, r *http.Request) {
 // the daemon log file and a loopback control listener (so `vpngate
 // status`/`disconnect` keep working while the GUI is connected) and wires
 // the same status/stop handlers the daemon re-exec path uses.
-func newServeSupervisor(servers []vpn.Server, initial vpn.Server, protocol, transport string, random, reconnect bool) (*supervisor, error) {
+func newServeSupervisor(servers []vpn.Server, initial vpn.Server, protocol, transport string, random, reconnect, killSwitch bool) (*supervisor, error) {
 	if err := os.MkdirAll(daemon.Dir(), 0o755); err != nil {
 		return nil, err
 	}
@@ -595,6 +597,7 @@ func newServeSupervisor(servers []vpn.Server, initial vpn.Server, protocol, tran
 		reconnect:  reconnect,
 		protocol:   protocol,
 		transport:  transport,
+		killSwitch: killSwitch,
 		logFile:    logFile,
 		server:     initial,
 	}
@@ -607,6 +610,9 @@ func newServeSupervisor(servers []vpn.Server, initial vpn.Server, protocol, tran
 // without touching any tunnel. It is only used to clean up a supervisor
 // that lost a connect race and never started.
 func (s *supervisor) shutdown() {
+	if s.ks != nil {
+		_ = s.ks.Disable(context.Background())
+	}
 	if s.control != nil {
 		_ = s.control.Close()
 	}

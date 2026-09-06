@@ -30,6 +30,7 @@ func Run(ctx context.Context, opts Options) (vpn.Server, bool, error) {
 		ctx:         ctx,
 		connectFn:   opts.ConnectFn,
 		healthPause: opts.HealthPause,
+		killSwitch:  opts.KillSwitch,
 		priv:        detectPrivilege(),
 	}
 

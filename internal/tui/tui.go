@@ -44,6 +44,9 @@ type Options struct {
 	// watchdog stops probing and can never drop the tunnel. Nil hides the
 	// toggle.
 	HealthPause *atomic.Bool
+	// KillSwitch, when non-nil, tracks whether the fail-safe kill switch is
+	// active. Toggled with the x or K keys.
+	KillSwitch *atomic.Bool
 }
 
 // connMsg streams one output line from an in-TUI connection, or marks its
@@ -112,6 +115,8 @@ type model struct {
 	// healthPause is the shared pause switch of the live-tunnel watchdog,
 	// toggled with the p key while a connection is up. Nil hides the toggle.
 	healthPause *atomic.Bool
+	// killSwitch tracks whether the fail-safe kill switch is active.
+	killSwitch *atomic.Bool
 	connect     *connectState
 	connCancel  context.CancelFunc
 	connPipe    chan connMsg
