@@ -9,7 +9,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "net.vpngate.mobile"
+        applicationId = "net.openrelay.vpn"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
