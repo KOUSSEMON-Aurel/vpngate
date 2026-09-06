@@ -5,82 +5,150 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Ambient Glow Behind Relay -->
+    <!-- Cyber Shield Background Surface -->
     <path
-        android:pathData="M36,54 C36,44 44,36 54,36 C64,36 72,44 72,54 C72,64 64,72 54,72 C44,72 36,64 36,54 Z"
-        android:strokeWidth="12"
-        android:strokeAlpha="0.12">
+        android:pathData="M54,12 L86,24 C86,54 74,78 54,94 C34,78 22,54 22,24 Z"
+        android:strokeWidth="1.5">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startY="12"
+                android:endY="94"
+                android:startColor="#0F172A"
+                android:endColor="#060C18"
+                android:type="linear" />
+        </aapt:attr>
         <aapt:attr name="android:strokeColor">
             <gradient
-                android:endColor="#00D9F5"
-                android:startColor="#00F5A0"
+                android:startX="22"
+                android:startY="24"
+                android:endX="86"
+                android:endY="94"
+                android:startColor="#1E293B"
+                android:centerColor="#059669"
+                android:endColor="#1E293B"
                 android:type="linear" />
         </aapt:attr>
     </path>
 
-    <!-- Continuous OpenRelay Infinity Stream - Loop 1 (Left to Right Lower Arc) -->
+    <!-- Subtle Center Grid Axis -->
     <path
-        android:pathData="M54,54 C46,64 38,68 28,68 C17,68 10,61 10,54 C10,47 17,40 28,40 C38,40 46,44 54,54 C62,64 70,68 80,68 C91,68 98,61 98,54 C98,47 91,40 80,40 C70,40 62,44 54,54"
+        android:pathData="M54,16 L54,90"
+        android:strokeWidth="1"
+        android:strokeAlpha="0.3"
+        android:strokeColor="#1E293B" />
+    <path
+        android:pathData="M26,54 L82,54"
+        android:strokeWidth="1"
+        android:strokeAlpha="0.3"
+        android:strokeColor="#1E293B" />
+
+    <!-- Inter-Letter Relay Bridge connecting O and R -->
+    <path
+        android:pathData="M48,54 L58,54"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="48"
+                android:startY="54"
+                android:endX="58"
+                android:endY="54"
+                android:startColor="#059669"
+                android:endColor="#00F0FF"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+
+    <!-- LETTER O: High-Precision Cyber Ring -->
+    <path
+        android:pathData="M36,38 A16,16 0 1,0 36,70 A16,16 0 1,0 36,38 Z"
+        android:strokeWidth="7">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="20"
+                android:startY="38"
+                android:endX="52"
+                android:endY="70"
+                android:startColor="#00F5A0"
+                android:endColor="#059669"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+
+    <!-- Target Inner Rings in O -->
+    <path
+        android:pathData="M36,46.5 A7.5,7.5 0 1,0 36,61.5 A7.5,7.5 0 1,0 36,46.5 Z"
+        android:strokeWidth="1.8"
+        android:strokeAlpha="0.4"
+        android:strokeColor="#00F5A0" />
+    <path
+        android:pathData="M36,54 m-3.5,0 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0"
+        android:fillColor="#00F5A0" />
+    <path
+        android:pathData="M36,54 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"
+        android:fillColor="#FFFFFF" />
+
+    <!-- LETTER R: Full Vertical Spine -->
+    <path
+        android:pathData="M58,36 L58,72"
+        android:strokeWidth="7"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="58"
+                android:startY="36"
+                android:endX="84"
+                android:endY="72"
+                android:startColor="#00F0FF"
+                android:endColor="#2563EB"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+
+    <!-- LETTER R: Upper Bowl -->
+    <path
+        android:pathData="M58,36 L73,36 C81,36 85,40 85,46.5 C85,53 81,55 73,55 L58,55"
         android:strokeWidth="7"
         android:strokeLineCap="round"
         android:strokeLineJoin="round">
         <aapt:attr name="android:strokeColor">
             <gradient
-                android:startX="10"
-                android:startY="54"
-                android:endX="98"
-                android:endY="54"
-                android:startColor="#00F5A0"
-                android:centerColor="#00D9F5"
-                android:endColor="#3B82F6"
+                android:startX="58"
+                android:startY="36"
+                android:endX="84"
+                android:endY="72"
+                android:startColor="#00F0FF"
+                android:endColor="#2563EB"
                 android:type="linear" />
         </aapt:attr>
     </path>
 
-    <!-- Inner High-Velocity Light Stream -->
+    <!-- LETTER R: Forward Relay Leg -->
     <path
-        android:pathData="M28,40 C38,40 46,44 54,54 C62,64 70,68 80,68"
-        android:strokeWidth="2.5"
+        android:pathData="M67,54 L84,72"
+        android:strokeWidth="7"
         android:strokeLineCap="round">
         <aapt:attr name="android:strokeColor">
             <gradient
-                android:startX="28"
-                android:startY="40"
-                android:endX="80"
-                android:endY="68"
-                android:startColor="#A7F3D0"
-                android:endColor="#E0F2FE"
+                android:startX="58"
+                android:startY="36"
+                android:endX="84"
+                android:endY="72"
+                android:startColor="#00F0FF"
+                android:endColor="#2563EB"
                 android:type="linear" />
         </aapt:attr>
     </path>
 
-    <!-- Relay Core Node Left (Pulse Core) -->
+    <!-- Signal Sparkles -->
     <path
-        android:fillColor="#00F5A0"
-        android:pathData="M28,54 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+        android:pathData="M58,36 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"
+        android:fillColor="#FFFFFF" />
     <path
-        android:fillColor="#090D16"
-        android:pathData="M28,54 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
-
-    <!-- Relay Core Node Right (Pulse Core) -->
+        android:pathData="M84,72 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0"
+        android:fillColor="#00F0FF" />
     <path
-        android:fillColor="#00D9F5"
-        android:pathData="M80,54 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
-    <path
-        android:fillColor="#090D16"
-        android:pathData="M80,54 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
-
-    <!-- Center Bridge Signal Flare -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,54 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
-
-    <!-- Satellite Orbiting Micro Nodes -->
-    <path
-        android:fillColor="#00F5A0"
-        android:pathData="M44,36 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M64,72 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+        android:pathData="M36,38 m-1.8,0 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0"
+        android:fillColor="#A7F3D0" />
 
 </vector>
