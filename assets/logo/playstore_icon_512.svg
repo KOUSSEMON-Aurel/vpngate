@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
+  <rect width="108" height="108" fill="#090D16"/>
+  <!-- LETTER O: Electric Mint -->
+  <circle cx="39" cy="54" r="18" fill="none" stroke="#00E599" stroke-width="8.5"/>
+  <!-- LETTER R: Crisp White -->
+  <path d="M 63 32 L 63 76" fill="none" stroke="#FFFFFF" stroke-width="8.5" stroke-linecap="round"/>
+  <path d="M 63 32 L 75 32 C 84 32, 89 36, 89 44 C 89 52, 84 54, 75 54 L 63 54" fill="none" stroke="#FFFFFF" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 63 54 L 87 76" fill="none" stroke="#FFFFFF" stroke-width="8.5" stroke-linecap="round"/>
+</svg>
