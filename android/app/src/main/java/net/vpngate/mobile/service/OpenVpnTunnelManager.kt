@@ -66,7 +66,9 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
         try {
             Log.d(TAG, "Starting OpenVPN for ${server.countryLong} (${server.ip})...")
             val sanitizedConfig = buildString {
-                appendLine("redirect-gateway def1")
+                appendLine("redirect-gateway def1 ipv6")
+                appendLine("route-ipv6 ::/0")
+                appendLine("ifconfig-ipv6 fd15:53b6:dead::2/64 fd15:53b6:dead::1")
                 appendLine("dhcp-option DNS 1.1.1.1")
                 appendLine("dhcp-option DNS 8.8.8.8")
                 appendLine("tun-mtu 1500")
