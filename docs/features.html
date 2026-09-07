@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Features & Architecture - OpenRelay VPN</title>
+  <meta name="description" content="Technical features and security architecture of OpenRelay VPN client.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+</head>
+<body>
+
+  <div class="ambient-glow"></div>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="index.html" class="brand-logo">
+        <img src="assets/icon.png" alt="OpenRelay Logo">
+        <span class="brand-name">Open<span>Relay</span></span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="features.html" class="active">Features</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="terms.html">Terms</a></li>
+        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank" class="btn-secondary">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero" style="padding-bottom: 40px;">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      <span>Technical Overview</span>
+    </div>
+    <h1 class="hero-title">
+      High-Speed Privacy by Design.<br>
+      <span class="gradient-text">State-of-the-Art Architecture.</span>
+    </h1>
+    <p class="hero-desc">
+      A transparent, decoupled architecture built with modern Kotlin, Jetpack Compose, and native cryptographic tunnels.
+    </p>
+  </section>
+
+  <!-- Feature Detailed Cards -->
+  <section class="features-section" style="padding-top: 0;">
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3 class="card-title">WireGuard Kernel Protocol</h3>
+        <p class="card-text">Utilizes ChaCha20-Poly1305 authenticated encryption and Curve25519 key exchange. Lightweight codebase reduces battery drain and CPU overhead on Android.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🔐</div>
+        <h3 class="card-title">OpenVPN 256-bit AES</h3>
+        <p class="card-text">Full compatibility with academic VPN Gate relay servers with robust TCP/UDP fallback to pierce restrictive firewalls and censorship barriers.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🗺️</div>
+        <h3 class="card-title">Interactive Gateway Map</h3>
+        <p class="card-text">Real-time geospatial visualization of active worldwide relay nodes. Instant latency sorting, ping filtering, and connection telemetry.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">📱</div>
+        <h3 class="card-title">Adaptive Android 15 Ready</h3>
+        <p class="card-text">Native support for Edge-to-Edge display, Material You dynamic color, adaptive launcher icons, and system dark/light theme switching.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🛡️</div>
+        <h3 class="card-title">Kill Switch & DNS Shield</h3>
+        <p class="card-text">Built-in protections against IPv6 leaks and unencrypted DNS requests to ensure zero accidental traffic exposure.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🌍</div>
+        <h3 class="card-title">Multi-Language Native Support</h3>
+        <p class="card-text">Instant on-the-fly switching between English, French, Spanish, German, and Japanese directly within the mobile application.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-container">
+      <div class="footer-copy">
+        © 2026 OpenRelay VPN Project. Free and open-source software under GPLv2.
+      </div>
+      <ul class="footer-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+        <li><a href="terms.html">Terms of Service</a></li>
+        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </footer>
+
+</body>
+</html>

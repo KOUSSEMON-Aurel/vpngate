@@ -1,68 +1,123 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy - OpenRelay VPN</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #090D16;
-            color: #E4E4E7;
-            line-height: 1.6;
-            margin: 0;
-            padding: 40px 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: #18181B;
-            padding: 36px;
-            border-radius: 16px;
-            border: 1px solid #27272A;
-        }
-        h1 { color: #10B981; font-size: 28px; margin-top: 0; }
-        h2 { color: #FFFFFF; font-size: 20px; margin-top: 28px; border-bottom: 1px solid #27272A; padding-bottom: 8px; }
-        a { color: #34D399; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        ul { padding-left: 20px; }
-        li { margin-bottom: 8px; }
-        .date { color: #A1A1AA; font-size: 14px; margin-bottom: 20px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenRelay VPN - Fast, Private & Decentralized Relay Network</title>
+  <meta name="description" content="Official website of OpenRelay VPN. High-speed encrypted VPN powered by public relay nodes and WireGuard.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="assets/icon.png">
 </head>
 <body>
-    <div class="container">
-        <h1>Privacy Policy for OpenRelay VPN</h1>
-        <div class="date">Last updated: September 2026</div>
 
-        <p>OpenRelay VPN ("we", "our", or "the application") is committed to respecting and safeguarding user privacy. This Privacy Policy outlines our principles and practices regarding information handling.</p>
+  <div class="ambient-glow"></div>
 
-        <h2>1. No Personal Data Collection</h2>
-        <p>OpenRelay VPN does <strong>NOT</strong> collect, store, track, sell, or transmit any personally identifiable information (PII).</p>
-        <ul>
-            <li><strong>No User Accounts:</strong> No sign-up, registration, email address, password, or profile information is ever collected.</li>
-            <li><strong>No Financial Data:</strong> The application is 100% free; no payment details or billing data are processed.</li>
-            <li><strong>No Analytics or Trackers:</strong> The application contains zero third-party advertising SDKs, trackers, or behavioral analytics services.</li>
-        </ul>
-
-        <h2>2. Use of Android VpnService</h2>
-        <p>OpenRelay VPN utilizes Android's official <code>VpnService</code> API to establish virtual private network tunnels (via OpenVPN and WireGuard protocols).</p>
-        <ul>
-            <li><strong>Encryption:</strong> All Internet traffic transmitted while the VPN tunnel is active is encrypted to protect your connection against eavesdropping on public Wi-Fi networks.</li>
-            <li><strong>No Client-side Logging:</strong> The application itself never inspects, captures, logs, or stores your browsing history, visited domain names, web traffic payloads, or DNS lookups.</li>
-        </ul>
-
-        <h2>3. Third-Party Relay Servers</h2>
-        <p>OpenRelay VPN connects to public, volunteer-operated relay servers or public Anycast relays. OpenRelay VPN is an independent open-source client. Volunteer servers operated by independent third parties may maintain operational connection logs according to their own server configurations.</p>
-
-        <h2>4. Local Preferences</h2>
-        <p>Any settings configured in the app (such as dark/light theme mode, selected UI language, and acceptance of the prominent disclosure dialog) are stored exclusively on your device using local storage (<code>SharedPreferences</code>). These settings never leave your device.</p>
-
-        <h2>5. Open Source Transparency & License</h2>
-        <p>OpenRelay VPN is free and open-source software. The source code is publicly inspectable on GitHub: <a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">github.com/KOUSSEMON-Aurel/vpngate</a>.</p>
-
-        <h2>6. Contact & Support</h2>
-        <p>If you have any questions, feedback, or concerns regarding this Privacy Policy, please open an issue on our official GitHub repository.</p>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="index.html" class="brand-logo">
+        <img src="assets/icon.png" alt="OpenRelay Logo">
+        <span class="brand-name">Open<span>Relay</span></span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html" class="active">Home</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="terms.html">Terms</a></li>
+        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank" class="btn-secondary">GitHub</a></li>
+        <li><a href="#download" class="btn-cta">Download App</a></li>
+      </ul>
     </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      <span>Next-Gen Relay Network • Zero-Logs Guaranteed</span>
+    </div>
+    <h1 class="hero-title">
+      Unrestricted Freedom.<br>
+      <span class="gradient-text">Pure Privacy in Motion.</span>
+    </h1>
+    <p class="hero-desc">
+      OpenRelay connects you to a global decentralized grid of high-performance relay nodes. Encrypt your daily traffic with cutting-edge WireGuard and OpenVPN protocols with zero activity tracking.
+    </p>
+    <div class="hero-actions" id="download">
+      <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases" class="btn-cta">
+        <span>Get on Google Play</span>
+        <span>→</span>
+      </a>
+      <a href="features.html" class="btn-secondary">
+        <span>Explore Architecture</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="features-section">
+    <div class="section-header">
+      <h2 class="section-title">Engineered for Sovereign Privacy</h2>
+      <p class="section-subtitle">No compromises on speed, security, or decentralization.</p>
+    </div>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3 class="card-title">WireGuard Anycast Acceleration</h3>
+        <p class="card-text">Lightning-fast handshakes and minimal latency powered by modern cryptographic state-of-the-art tunnels.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🛡️</div>
+        <h3 class="card-title">Strict Zero-Logs Policy</h3>
+        <p class="card-text">We do not track, profile, inspect, or log your browsing data. No account registration or email required.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🌐</div>
+        <h3 class="card-title">Decentralized Relay Mesh</h3>
+        <p class="card-text">Access hundreds of verified public relay servers across Europe, Asia, and the Americas without single point of failure.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🔒</div>
+        <h3 class="card-title">Dual Protocol Engine</h3>
+        <p class="card-text">Seamlessly toggle between high-performance WireGuard and battle-tested OpenVPN 256-bit AES encryption.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">📡</div>
+        <h3 class="card-title">Live IP Verification</h3>
+        <p class="card-text">Inspect and verify your detected public egress IP and ping in real-time right from your mobile dashboard.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🎨</div>
+        <h3 class="card-title">Thoughtful Minimalist UI</h3>
+        <p class="card-text">Handcrafted with Material Design 3, fluid dark/light adaptive theming, and an interactive world gateway map.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-container">
+      <div class="footer-copy">
+        © 2026 OpenRelay VPN Project. Free and open-source software under GPLv2.
+      </div>
+      <ul class="footer-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+        <li><a href="terms.html">Terms of Service</a></li>
+        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </footer>
+
 </body>
 </html>
