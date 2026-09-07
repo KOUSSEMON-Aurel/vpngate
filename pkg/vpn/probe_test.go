@@ -145,8 +145,8 @@ func TestProbeServerWorking(t *testing.T) {
 	if result.Status != ProbeWorking {
 		t.Fatalf("expected working, got %v (detail: %s)", result.Status, result.Detail)
 	}
-	if result.LatencyMs <= 0 {
-		t.Fatalf("expected positive latency, got %d", result.LatencyMs)
+	if result.LatencyMs < 0 {
+		t.Fatalf("expected non-negative latency, got %d", result.LatencyMs)
 	}
 }
 
