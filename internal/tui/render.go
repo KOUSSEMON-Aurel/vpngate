@@ -613,7 +613,7 @@ func (m *model) footer(w int) string {
 			b.WriteString("  [enter] connect")
 		}
 		b.WriteString("  [w] working-only")
-		b.WriteString(fmt.Sprintf("  [s] sort: %s", sortModeName(m.sortMode)))
+		fmt.Fprintf(&b, "  [s] sort: %s", sortModeName(m.sortMode))
 		if m.killSwitch != nil {
 			if m.killSwitch.Load() {
 				b.WriteString(styleWorking.Render("  [x] killswitch: on"))

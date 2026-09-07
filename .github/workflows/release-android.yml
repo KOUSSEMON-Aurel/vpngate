@@ -63,14 +63,13 @@ jobs:
           echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
           
           # Copie et renommage propre des APKs
-          cd android/app/build/outputs/apk/release/
-          for f in app-*.apk; do
+          for f in android/app/build/outputs/apk/release/app-*.apk; do
             if [ -f "$f" ]; then
-              arch=$(echo "$f" | sed -E 's/app-//;s/-release(-unsigned)?\.apk//')
-              cp "$f" "../../../../../release_artifacts/openrelay_${VERSION}_${arch}.apk"
+              fname=$(basename "$f")
+              arch=$(echo "$fname" | sed -E 's/app-//;s/-release(-unsigned)?\.apk//')
+              cp "$f" "release_artifacts/openrelay_${VERSION}_${arch}.apk"
             fi
           done
-          cd -
 
           # Copie et renommage du bundle Google Play AAB
           AAB_FILE=$(find android/app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
