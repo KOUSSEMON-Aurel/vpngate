@@ -104,17 +104,21 @@ jobs:
           
           echo "Nom du tag : $TAG_NAME"
 
+          cat <<EOF > release_notes.md
+          ## OpenRelay VPN v${VERSION} (Build ${VERSION_CODE})
+
+          ### Fichiers disponibles :
+          - **Google Play Bundle**: \`openrelay_${VERSION}.aab\` (à importer dans la Google Play Console)
+          - **APK Universel**: \`openrelay_${VERSION}_universal.apk\` (installation directe tout appareil)
+          - **APKs par architecture**: \`arm64-v8a\`, \`armeabi-v7a\`, \`x86_64\`, \`x86\`
+          EOF
+
           # Création de la release GitHub si elle n'existe pas encore
           if ! gh release view "$TAG_NAME" > /dev/null 2>&1; then
             echo "Création de la release GitHub $TAG_NAME..."
             gh release create "$TAG_NAME" \
               --title "OpenRelay VPN v${VERSION}" \
-              --notes "Release automatique Android v${VERSION} (Build ${VERSION_CODE}).
-
-### Fichiers disponibles :
-- **Google Play Bundle**: \`openrelay_${VERSION}.aab\` (à importer dans la Google Play Console)
-- **APK Universel**: \`openrelay_${VERSION}_universal.apk\` (installation directe tout appareil)
-- **APKs par architecture**: \`arm64-v8a\`, \`armeabi-v7a\`, \`x86_64\`, \`x86\`"
+              --notes-file release_notes.md
           fi
 
           # Upload des artefacts avec --clobber pour remplacer en cas de re-run
