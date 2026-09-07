@@ -21,8 +21,42 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = System.getenv("ANDROID_STORE_FILE")
+            if (!storeFilePath.isNullOrEmpty()) {
+                val resolved = if (file(storeFilePath).exists()) {
+                    file(storeFilePath)
+                } else if (rootProject.file(storeFilePath).exists()) {
+                    rootProject.file(storeFilePath)
+                } else {
+                    null
+                }
+                if (resolved != null) {
+                    storeFile = resolved
+                    storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+                    keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                    keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                }
+            }
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         release {
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
