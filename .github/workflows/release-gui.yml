@@ -1,0 +1,128 @@
+name: Release Desktop GUI
+
+on:
+  push:
+    tags:
+      - 'gui-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag de release GUI (ex: gui-v0.1.0)'
+        required: false
+        default: 'gui-v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-gui:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+          - platform: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Build Go Sidecar Binary
+        shell: bash
+        run: |
+          mkdir -p gui/src-tauri/binaries
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            CGO_ENABLED=0 go build -o gui/src-tauri/binaries/vpngate-${{ matrix.target }}.exe .
+          else
+            CGO_ENABLED=0 go build -o gui/src-tauri/binaries/vpngate-${{ matrix.target }} .
+          fi
+          ls -la gui/src-tauri/binaries/
+
+      - name: Install Frontend Dependencies & Build Web App
+        working-directory: ./gui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Tauri Application
+        working-directory: ./gui
+        run: npx @tauri-apps/cli build
+
+      - name: Collect GUI Release Artifacts
+        shell: bash
+        run: |
+          mkdir -p gui_release_artifacts
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            find gui/src-tauri/target/release/bundle/ -type f \( -name "*.msi" -o -name "*.exe" \) -exec cp {} gui_release_artifacts/ \;
+          else
+            find gui/src-tauri/target/release/bundle/ -type f \( -name "*.deb" -o -name "*.AppImage" \) -exec cp {} gui_release_artifacts/ \;
+          fi
+          echo "Fichiers générés :"
+          ls -lh gui_release_artifacts/
+
+      - name: Upload Artifacts to Workflow Run
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-${{ matrix.target }}
+          path: gui_release_artifacts/
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.ref_name }}"
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="gui-v0.1.0"
+          fi
+          echo "Publication sur le tag $TAG..."
+
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "OpenRelay Desktop GUI ($TAG)" \
+              --notes "Version de bureau OpenRelay / VPNGate avec interface graphique (Linux .deb / .AppImage et Windows .exe / .msi)."
+          fi
+
+          gh release upload "$TAG" gui_release_artifacts/* --clobber
