@@ -38,14 +38,33 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "Génération du keystore Android à partir des secrets GitHub..."
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/key.jks
-            export ANDROID_STORE_FILE="key.jks"
+            echo "Keystore secret présent, décodage..."
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release.jks
+            export ANDROID_STORE_FILE="release.jks"
           else
-            echo "Aucun secret de keystore trouvé, compilation en mode release standard..."
+            echo "Aucun secret de keystore trouvé. Génération automatique d'une clé de signature release..."
+            keytool -genkey -v -keystore app/release.jks \
+              -alias openrelay -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass openrelay123 -keypass openrelay123 \
+              -dname "CN=OpenRelay, OU=Mobile, O=OpenRelay, L=Paris, ST=IDF, C=FR"
+            export ANDROID_STORE_FILE="release.jks"
+            export ANDROID_KEY_ALIAS="openrelay"
+            export ANDROID_STORE_PASSWORD="openrelay123"
+            export ANDROID_KEY_PASSWORD="openrelay123"
           fi
 
           ./gradlew assembleRelease bundleRelease --stacktrace
+
+      - name: Verify APK Signatures
+        run: |
+          echo "Vérification des signatures cryptographiques des APKs..."
+          APKSIGNER=$(find $ANDROID_HOME/build-tools/ -name apksigner | sort -V | tail -n 1)
+          for f in android/app/build/outputs/apk/release/app-*-release.apk; do
+            if [ -f "$f" ]; then
+              echo "==> Vérification de $(basename $f) :"
+              $APKSIGNER verify --verbose "$f"
+            fi
+          done
 
       - name: Prepare Release Artifacts
         run: |
@@ -56,17 +75,17 @@ jobs:
           VERSION_CODE=$(grep 'versionCode = ' android/app/build.gradle.kts | head -n 1 | sed -E 's/.*= *([0-9]+).*/\1/')
           
           if [ -z "$VERSION" ]; then
-            VERSION="1.0.0"
+            VERSION="1.0.1"
           fi
           
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
           
-          # Copie et renommage propre des APKs
-          for f in android/app/build/outputs/apk/release/app-*.apk; do
+          # Copie et renommage propre des APKs signés
+          for f in android/app/build/outputs/apk/release/app-*-release.apk; do
             if [ -f "$f" ]; then
               fname=$(basename "$f")
-              arch=$(echo "$fname" | sed -E 's/app-//;s/-release(-unsigned)?\.apk//')
+              arch=$(echo "$fname" | sed -E 's/app-//;s/-release\.apk//')
               cp "$f" "release_artifacts/openrelay_${VERSION}_${arch}.apk"
             fi
           done

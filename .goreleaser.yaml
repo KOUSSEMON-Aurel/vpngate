@@ -43,21 +43,8 @@ changelog:
       - "^docs:"
       - "^test:"
 release:
-  github:
-    owner: davegallant
-    name: vpngate
-
-# Check https://goreleaser.com/customization/homebrew/
-brews:
-  - homepage: "https://github.com/davegallant/homebrew-public"
-    description: "a client for vpngate.net"
-    directory: Formula
-    commit_author:
-      name: davegallant
-      email: davegallant@gmail.com
-    repository:
-      owner: davegallant
-      name: homebrew-public
+  prerelease: auto
+  mode: replace
 
 # Check https://goreleaser.com/customization/winget/
 winget:

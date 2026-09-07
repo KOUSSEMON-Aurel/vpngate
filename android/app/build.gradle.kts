@@ -12,8 +12,8 @@ android {
         applicationId = "net.openrelay.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -23,21 +23,22 @@ android {
 
     signingConfigs {
         create("release") {
-            val storeFilePath = System.getenv("ANDROID_STORE_FILE")
-            if (!storeFilePath.isNullOrEmpty()) {
-                val resolved = if (file(storeFilePath).exists()) {
-                    file(storeFilePath)
-                } else if (rootProject.file(storeFilePath).exists()) {
-                    rootProject.file(storeFilePath)
-                } else {
-                    null
-                }
-                if (resolved != null) {
-                    storeFile = resolved
-                    storePassword = System.getenv("ANDROID_STORE_PASSWORD")
-                    keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                    keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-                }
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            val envStoreFile = System.getenv("ANDROID_STORE_FILE")
+            val defaultKeyFile = file("release.jks")
+            val resolved = when {
+                !envStoreFile.isNullOrEmpty() && file(envStoreFile).exists() -> file(envStoreFile)
+                !envStoreFile.isNullOrEmpty() && rootProject.file(envStoreFile).exists() -> rootProject.file(envStoreFile)
+                defaultKeyFile.exists() -> defaultKeyFile
+                else -> null
+            }
+            if (resolved != null) {
+                storeFile = resolved
+                storePassword = System.getenv("ANDROID_STORE_PASSWORD") ?: "openrelay123"
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "openrelay"
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "openrelay123"
             }
         }
     }
