@@ -5,3 +5,9 @@ dist
 # direnv
 .direnv
 .envrc.local
+
+# Keystores and secrets
+*.jks
+*.keystore
+keystore_base64.txt
+keystore_secrets.txt
