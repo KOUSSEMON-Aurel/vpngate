@@ -36,45 +36,15 @@ checksum:
 snapshot:
   name_template: "{{ .Tag }}"
 changelog:
+  use: git
   sort: asc
-  use: github
   filters:
     exclude:
       - "^docs:"
       - "^test:"
 release:
+  github:
+    owner: KOUSSEMON-Aurel
+    name: vpngate
   prerelease: auto
   mode: replace
-
-# Check https://goreleaser.com/customization/winget/
-winget:
-  - name: vpngate
-    publisher: davegallant
-    package_identifier: davegallant.vpngate
-    short_description: "a client for vpngate.net"
-    license: "GPL-3.0-or-later"
-    license_url: "https://github.com/davegallant/vpngate/blob/main/LICENSE"
-    homepage: "https://github.com/davegallant/vpngate"
-    commit_author:
-      name: davegallant
-      email: davegallant@gmail.com
-    tags:
-      - vpn
-      - openvpn
-      - cli
-    dependencies:
-      - package_identifier: OpenVPNTechnologies.OpenVPN
-    # Dry run only: writes the manifest to dist/ but does not push or open a
-    # PR. Flip to false once davegallant/winget-pkgs and the release token
-    # are confirmed to work end to end.
-    skip_upload: true
-    repository:
-      owner: davegallant
-      name: winget-pkgs
-      branch: "{{.ProjectName}}-{{.Version}}"
-      pull_request:
-        enabled: true
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master

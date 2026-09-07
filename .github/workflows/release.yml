@@ -36,13 +36,14 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           if [ -n "${{ inputs.tag }}" ]; then
             TAG="${{ inputs.tag }}"
-            echo "Création du tag demandé : $TAG"
-            git tag -a "$TAG" -m "Release $TAG"
-          elif [ -z "$(git tag --points-at HEAD)" ]; then
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.4.1")
-            echo "Pas de tag sur HEAD. Utilisation de $LATEST_TAG"
-            git tag -a "$LATEST_TAG" -m "Release $LATEST_TAG" || true
+          elif [ -n "$(git tag --points-at HEAD)" ]; then
+            TAG="$(git tag --points-at HEAD | head -n 1)"
+          else
+            TAG="v0.4.1"
           fi
+          echo "Utilisation du tag : $TAG"
+          git tag -f -a "$TAG" -m "Release $TAG"
+          git push -f origin "$TAG" || true
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
