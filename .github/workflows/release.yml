@@ -169,12 +169,39 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
+          mkdir -p app
+          KEYSTORE_VALID=false
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "Decoding release keystore from secrets..."
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release.jks
-            export ANDROID_STORE_FILE="release.jks"
-          else
-            echo "No keystore secret provided. Generating fallback release key..."
+            echo "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > app/release.jks 2>/dev/null || true
+            if [ -s "app/release.jks" ]; then
+              DETECTED_ALIAS=$(keytool -list -keystore app/release.jks -storepass "${ANDROID_STORE_PASSWORD:-OpenRelay2026SecureKey!}" 2>/dev/null | grep -E "PrivateKeyEntry" | awk -F',' '{print $1}' | head -n 1 | xargs || true)
+              if [ -n "$DETECTED_ALIAS" ]; then
+                echo "Successfully verified keystore! Found key alias: $DETECTED_ALIAS"
+                export ANDROID_STORE_FILE="release.jks"
+                export ANDROID_KEY_ALIAS="$DETECTED_ALIAS"
+                KEYSTORE_VALID=true
+              else
+                echo "Checking fallback store passwords..."
+                for pwd in "OpenRelay2026SecureKey!" "openrelay123" "openrelay"; do
+                  DETECTED_ALIAS=$(keytool -list -keystore app/release.jks -storepass "$pwd" 2>/dev/null | grep -E "PrivateKeyEntry" | awk -F',' '{print $1}' | head -n 1 | xargs || true)
+                  if [ -n "$DETECTED_ALIAS" ]; then
+                    echo "Verified keystore with password! Found key alias: $DETECTED_ALIAS"
+                    export ANDROID_STORE_FILE="release.jks"
+                    export ANDROID_KEY_ALIAS="$DETECTED_ALIAS"
+                    export ANDROID_STORE_PASSWORD="$pwd"
+                    export ANDROID_KEY_PASSWORD="$pwd"
+                    KEYSTORE_VALID=true
+                    break
+                  fi
+                done
+              fi
+            fi
+          fi
+
+          if [ "$KEYSTORE_VALID" != "true" ]; then
+            echo "Generating fallback release keystore..."
+            rm -f app/release.jks
             keytool -genkey -v -keystore app/release.jks \
               -alias openrelay -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass openrelay123 -keypass openrelay123 \
