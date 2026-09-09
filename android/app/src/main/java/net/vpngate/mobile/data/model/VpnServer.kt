@@ -21,7 +21,9 @@ data class VpnServer(
     val source: String = "vpngate",
     val protocol: String = "openvpn",
     val authUsername: String? = null,
-    val authPassword: String? = null
+    val authPassword: String? = null,
+    val verifiedLatency: Long? = null,
+    val isReachable: Boolean? = null
 ) {
     val isWireguard: Boolean
         get() = protocol == "wireguard" || source == "wireguard" || source == "warp"
@@ -34,19 +36,6 @@ data class VpnServer(
 
     val countryBadge: String
         get() = if (isWarp) "WG" else countryShort.uppercase().take(3).ifBlank { "VPN" }
-
-    val flagEmoji: String
-        get() {
-            if (isWarp) return "⚡"
-            if (countryShort.length != 2) return "🌐"
-            return try {
-                val first = Character.codePointAt(countryShort.uppercase(), 0) - 0x41 + 0x1F1E6
-                val second = Character.codePointAt(countryShort.uppercase(), 1) - 0x41 + 0x1F1E6
-                String(Character.toChars(first)) + String(Character.toChars(second))
-            } catch (_: Exception) {
-                "🌐"
-            }
-        }
 
     val decodedConfig: String by lazy {
         try {
@@ -72,8 +61,15 @@ data class VpnServer(
         match?.groupValues?.get(1)?.toIntOrNull() ?: 443
     }
 
+    val isUdp: Boolean by lazy {
+        decodedConfig.contains("proto udp")
+    }
+
     val isOnline: Boolean
-        get() = ping in 1..8999
+        get() = if (isWarp) true else isReachable != false
+
+    val effectivePing: Long
+        get() = if (isWarp) 15L else (verifiedLatency ?: (if (ping in 1..8999) ping else 999L))
 
     companion object {
         fun createWarpServer(): VpnServer {

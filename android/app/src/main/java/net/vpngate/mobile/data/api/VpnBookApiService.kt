@@ -21,6 +21,8 @@ class VpnBookApiService {
         private const val BASE_URL = "https://www.vpnbook.com/freevpn/openvpn"
         private const val CONFIG_API_URL = "https://www.vpnbook.com/api/openvpn"
         private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+        @Volatile
+        var lastKnownPassword: String? = null
     }
 
     private val client = OkHttpClient.Builder()
@@ -69,7 +71,7 @@ class VpnBookApiService {
                         source = "vpnbook",
                         protocol = "openvpn",
                         authUsername = obj.optString("username", "vpnbook"),
-                        authPassword = obj.optString("password", "3ssumf2")
+                        authPassword = lastKnownPassword ?: obj.optString("password", "3ssumf2").takeIf { it != "$" && it.isNotBlank() } ?: "3ssumf2"
                     )
                 )
             }
@@ -93,9 +95,14 @@ class VpnBookApiService {
 
         val payload = resp.body?.string() ?: return@withContext emptyList()
 
-        // Extract credentials
-        val username = Regex("""Username".*?"([^"]+)"""").find(payload)?.groupValues?.get(1) ?: "vpnbook"
-        val password = Regex("""Password".*?"([^"]+)"""").find(payload)?.groupValues?.get(1) ?: "3ssumf2"
+        // Extract credentials using precise Next.js RSC children node parsing (matching Desktop Go engine)
+        val extractedUser = extractChildValue(payload, "Username")
+        val extractedPass = extractChildValue(payload, "Password")
+        val username = if (extractedUser.isNotBlank() && extractedUser != "$") extractedUser else "vpnbook"
+        val password = if (extractedPass.isNotBlank() && extractedPass != "$") extractedPass else "3ssumf2"
+        lastKnownPassword = password
+
+        Log.d(TAG, "VPNBook dynamic credentials extracted: user=$username, pass=${password.take(2)}*** (len=${password.length})")
 
         // Extract server definitions
         val serverRegex = Regex("""\{"id":"([^"]+)","name":"([^"]+)","hostname":"([^"]+)","ipAddress":"([^"]+)","countryCode":"([^"]+)","countryName":"([^"]+)"\}""")
@@ -148,5 +155,17 @@ class VpnBookApiService {
                 }
             }
         }.awaitAll().filterNotNull()
+    }
+
+    private fun extractChildValue(payload: String, label: String): String {
+        val idx = payload.indexOf(label)
+        if (idx < 0) return ""
+        val window = payload.substring(idx, (idx + 600).coerceAtMost(payload.length))
+        val re = Regex("""children":"([^"]+)"""")
+        for (m in re.findAll(window)) {
+            val v = m.groupValues[1]
+            if (v != label) return v
+        }
+        return ""
     }
 }

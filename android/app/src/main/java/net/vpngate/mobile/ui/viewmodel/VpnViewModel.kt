@@ -29,7 +29,8 @@ import net.vpngate.mobile.service.UnifiedTunnelManager
 enum class SortMode {
     PING,
     SPEED,
-    SCORE
+    SCORE,
+    COUNTRY
 }
 
 enum class ProtocolFilter {
@@ -37,6 +38,18 @@ enum class ProtocolFilter {
     WARP,
     OPENVPN
 }
+
+enum class RelayFilterMode {
+    ALL,
+    WARP,
+    VPNBOOK,
+    VPNGATE
+}
+
+data class RelayFilterConfig(
+    val mode: RelayFilterMode = RelayFilterMode.ALL,
+    val onlyActive: Boolean = false
+)
 
 class VpnViewModel @JvmOverloads constructor(
     application: Application,
@@ -53,25 +66,31 @@ class VpnViewModel @JvmOverloads constructor(
     val connectionState: StateFlow<VpnConnectionState> = UnifiedTunnelManager.connectionState
 
     private val _servers = MutableStateFlow<List<VpnServer>>(emptyList())
-    val servers = _servers.asStateFlow()
+    val servers: StateFlow<List<VpnServer>> = _servers.asStateFlow()
 
     private val _selectedServer = MutableStateFlow<VpnServer?>(null)
-    val selectedServer = _selectedServer.asStateFlow()
+    val selectedServer: StateFlow<VpnServer?> = _selectedServer.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
-    val isLoading = _isLoading.asStateFlow()
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
-    val searchQuery = _searchQuery.asStateFlow()
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _selectedCountry = MutableStateFlow<String?>(null)
     val selectedCountry = _selectedCountry.asStateFlow()
 
     private val _protocolFilter = MutableStateFlow(ProtocolFilter.ALL)
     val protocolFilter = _protocolFilter.asStateFlow()
+
+    private val _filterConfig = MutableStateFlow(RelayFilterConfig())
+    val relayFilter: StateFlow<RelayFilterMode> = _filterConfig.map { it.mode }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, RelayFilterMode.ALL)
+    val onlyActive: StateFlow<Boolean> = _filterConfig.map { it.onlyActive }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _sortMode = MutableStateFlow(SortMode.PING)
     val sortMode = _sortMode.asStateFlow()
@@ -85,21 +104,26 @@ class VpnViewModel @JvmOverloads constructor(
     }.flowOn(Dispatchers.Default)
      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    @OptIn(FlowPreview::class)
     val filteredServers: StateFlow<List<VpnServer>> = combine(
         _servers,
-        _searchQuery.debounce(150),
+        _searchQuery,
         _selectedCountry,
-        _protocolFilter,
+        _filterConfig,
         _sortMode
-    ) { list, query, country, proto, sort ->
+    ) { list, query, country, filterConfig, sort ->
         var filtered = list
 
-        // Protocol filtering
-        when (proto) {
-            ProtocolFilter.ALL -> {}
-            ProtocolFilter.WARP -> filtered = filtered.filter { it.isWarp }
-            ProtocolFilter.OPENVPN -> filtered = filtered.filter { !it.isWarp }
+        // Only active filter
+        if (filterConfig.onlyActive) {
+            filtered = filtered.filter { it.isWarp || it.isReachable == true }
+        }
+
+        // Provider/source filtering
+        when (filterConfig.mode) {
+            RelayFilterMode.ALL -> {}
+            RelayFilterMode.WARP -> filtered = filtered.filter { it.isWarp }
+            RelayFilterMode.VPNBOOK -> filtered = filtered.filter { it.isVpnBook }
+            RelayFilterMode.VPNGATE -> filtered = filtered.filter { !it.isWarp && !it.isVpnBook }
         }
 
         if (country != null) {
@@ -117,10 +141,33 @@ class VpnViewModel @JvmOverloads constructor(
             }
         }
 
+        val reachabilityRank: (VpnServer) -> Int = {
+            when {
+                it.isWarp -> 0
+                it.isReachable == false -> 3 // Confirmed unreachable (RED DOT) -> ALWAYS AT THE VERY BOTTOM
+                it.ping <= 0 && it.isReachable != true -> 2 // Unresponsive / dead -> bottom
+                it.isReachable == true -> 0 // Verified alive -> top priority
+                else -> 1 // Unverified / pending verification in middle
+            }
+        }
+
         when (sort) {
-            SortMode.PING -> filtered.sortedBy { if (it.isWarp) 0L else (it.ping.takeIf { p -> p > 0 } ?: 999L) }
-            SortMode.SPEED -> filtered.sortedByDescending { it.speed }
-            SortMode.SCORE -> filtered.sortedByDescending { it.score }
+            SortMode.PING -> filtered.sortedWith(
+                compareBy<VpnServer> { reachabilityRank(it) }
+                    .thenBy { it.effectivePing }
+            )
+            SortMode.SPEED -> filtered.sortedWith(
+                compareBy<VpnServer> { reachabilityRank(it) }
+                    .thenByDescending { it.speed }
+            )
+            SortMode.SCORE -> filtered.sortedWith(
+                compareBy<VpnServer> { reachabilityRank(it) }
+                    .thenByDescending { it.score }
+            )
+            SortMode.COUNTRY -> filtered.sortedWith(
+                compareBy<VpnServer> { reachabilityRank(it) }
+                    .thenBy { it.countryLong }
+            )
         }
     }.flowOn(Dispatchers.Default)
      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -172,12 +219,20 @@ class VpnViewModel @JvmOverloads constructor(
                         }
                         if (isConnectingByUser && failoverCount < 3) {
                             failoverCount++
+                            // Failover MUST respect the user's selected country or source
+                            val targetCountry = failed?.countryShort
+                            val targetSource = failed?.source
                             val candidates = _servers.value.filter { 
-                                it.ip !in failedIps && it.ping < 9000L && it.openVpnConfigDataBase64.isNotBlank() 
+                                it.ip !in failedIps && 
+                                (it.isWarp || it.openVpnConfigDataBase64.isNotBlank()) &&
+                                (targetCountry == null || it.countryShort.equals(targetCountry, ignoreCase = true)) &&
+                                (targetSource == null || it.source == targetSource)
                             }
-                            val nextCandidate = repository.findBestServer(candidates)
+                            val nextCandidate = candidates.filter { it.ip != failed?.ip }
+                                .minByOrNull { if (it.isWarp) 0L else (it.ping.takeIf { p -> p > 0 } ?: 999L) }
+
                             if (nextCandidate != null) {
-                                android.util.Log.i("VpnViewModel", "Automatic failover to ${nextCandidate.ip} (attempt $failoverCount/3)")
+                                android.util.Log.i("VpnViewModel", "Automatic failover in ${failed?.countryLong} to ${nextCandidate.ip} (attempt $failoverCount/3)")
                                 _selectedServer.value = nextCandidate
                                 kotlinx.coroutines.delay(600)
                                 UnifiedTunnelManager.startVpn(getApplication(), nextCandidate)
@@ -235,13 +290,20 @@ class VpnViewModel @JvmOverloads constructor(
                     _servers.value = fetched
                     if (connectionState.value.status != ConnectionStatus.CONNECTED &&
                         connectionState.value.status != ConnectionStatus.CONNECTING) {
-                        _selectedServer.value = repository.findBestServer(fetched) ?: fetched.first()
+                        val current = _selectedServer.value
+                        if (current == null) {
+                            _selectedServer.value = repository.findBestServer(fetched) ?: fetched.first()
+                        } else {
+                            _selectedServer.value = fetched.find { it.ip == current.ip && it.source == current.source } ?: current
+                        }
                     }
                 }
 
-                // Ping top servers asynchronously in background
+                // Ping all servers asynchronously in background to verify real network status
                 if (fetched.isNotEmpty()) {
-                    val pinged = repository.pingServers(fetched, limit = 20)
+                    val pinged = repository.pingServers(fetched) { partial ->
+                        _servers.value = partial
+                    }
                     _servers.value = pinged
                     if (_selectedServer.value != null && !_selectedServer.value!!.isWarp) {
                         _selectedServer.value = pinged.find { it.ip == _selectedServer.value?.ip } ?: _selectedServer.value
@@ -279,6 +341,14 @@ class VpnViewModel @JvmOverloads constructor(
 
     fun setProtocolFilter(filter: ProtocolFilter) {
         _protocolFilter.value = filter
+    }
+
+    fun setRelayFilter(filter: RelayFilterMode) {
+        _filterConfig.value = _filterConfig.value.copy(mode = filter)
+    }
+
+    fun toggleOnlyActive() {
+        _filterConfig.value = _filterConfig.value.copy(onlyActive = !_filterConfig.value.onlyActive)
     }
 
     fun setSortMode(mode: SortMode) {

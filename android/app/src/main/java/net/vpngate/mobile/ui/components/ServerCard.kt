@@ -17,8 +17,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,21 +54,44 @@ fun ServerCard(
     val borderColor = when {
         isCurrentConnected -> colors.statusConnected
         isSelected -> colors.accentSecondary
-        else -> colors.border
+        else -> if (colors.isDark) colors.border else Color(0xFFCBD5E1)
     }
 
-    val pingColor = when {
-        server.ping > 8000 -> colors.textMuted
-        server.ping <= 60 -> colors.statusConnected
-        server.ping <= 140 -> Amber500
-        else -> Rose500
+    val isDead = server.isReachable == false
+    val (dotColor, latencyText) = when {
+        server.isWarp -> colors.statusConnected to "15 ms"
+        server.isReachable == true -> {
+            val ms = server.verifiedLatency ?: server.effectivePing
+            val color = when {
+                ms <= 100 -> colors.statusConnected
+                ms <= 260 -> Amber500
+                else -> Color(0xFFD97706)
+            }
+            color to "$ms ms"
+        }
+        server.isReachable == false -> {
+            Rose500 to "Hors ligne"
+        }
+        else -> {
+            if (server.ping <= 0) {
+                colors.textMuted to "—"
+            } else {
+                val ms = server.effectivePing
+                val color = when {
+                    ms <= 80 -> colors.statusConnected
+                    ms <= 200 -> Amber500
+                    else -> Color(0xFFD97706)
+                }
+                color to "${server.ping} ms"
+            }
+        }
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
-                elevation = if (colors.isDark) 0.dp else 3.dp,
+                elevation = if (colors.isDark) 0.dp else 2.dp,
                 shape = RoundedCornerShape(16.dp),
                 ambientColor = colors.cardShadowColor,
                 spotColor = colors.cardShadowColor
@@ -88,15 +114,15 @@ fun ServerCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(if (colors.isDark) colors.surfaceVariant else Color(0xFFE0F2FE))
-                        .border(1.dp, if (colors.isDark) colors.border else Color(0xFFBAE6FD), RoundedCornerShape(8.dp)),
+                        .border(1.dp, if (colors.isDark) colors.border else Color(0xFFBAE6FD), RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = server.countryBadge,
-                        color = colors.accentSecondary,
+                        color = if (colors.isDark) colors.accentSecondary else Color(0xFF0369A1),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -108,7 +134,7 @@ fun ServerCard(
                         Text(
                             text = server.countryLong,
                             color = colors.textPrimary,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -130,6 +156,7 @@ fun ServerCard(
                         text = server.ip,
                         color = colors.textSecondary,
                         fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -142,14 +169,14 @@ fun ServerCard(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(pingColor)
+                                .background(dotColor)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (server.ping > 8000) "Offline" else "${server.ping} ms",
-                            color = pingColor,
+                            text = latencyText,
+                            color = dotColor,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.SemiBold
                         )
 
                         Spacer(modifier = Modifier.width(10.dp))
@@ -157,47 +184,85 @@ fun ServerCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(if (server.isWarp) colors.accentSecondary.copy(alpha = 0.15f) else colors.surfaceVariant)
+                                .background(if (server.isWarp) (if (colors.isDark) colors.accentSecondary.copy(alpha = 0.15f) else Color(0xFFE0F2FE)) else (if (colors.isDark) colors.surfaceVariant else Color(0xFFF1F5F9)))
+                                .border(1.dp, if (server.isWarp) (if (colors.isDark) colors.accentSecondary.copy(alpha = 0.3f) else Color(0xFFBAE6FD)) else (if (colors.isDark) colors.border else Color(0xFFCBD5E1)), RoundedCornerShape(4.dp))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = if (server.isWarp) "WireGuard" else "OpenVPN",
-                                color = if (server.isWarp) colors.accentSecondary else colors.textSecondary,
+                                color = if (server.isWarp) (if (colors.isDark) colors.accentSecondary else Color(0xFF0369A1)) else (if (colors.isDark) colors.textSecondary else Color(0xFF334155)),
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
-            // Connect button
-            val btnBg = when {
-                isCurrentConnected -> if (colors.isDark) Color(0xFF064E3B) else Color(0xFFD1FAE5)
-                else -> if (colors.isDark) colors.surfaceVariant else Color(0xFFF1F5F9)
+            // Connect button (High contrast, vibrant, crisp action CTA)
+            val buttonContainerColor = when {
+                isCurrentConnected -> if (colors.isDark) Color(0xFF065F46) else Color(0xFF047857)
+                isDead -> if (colors.isDark) Color(0xFF27272A) else Color(0xFFF1F5F9)
+                else -> if (colors.isDark) Color(0xFF182E26) else Color(0xFF059669)
             }
-            val btnFg = when {
-                isCurrentConnected -> if (colors.isDark) colors.statusConnected else Color(0xFF065F46)
-                else -> colors.textPrimary
+            val buttonContentColor = when {
+                isCurrentConnected -> Color.White
+                isDead -> if (colors.isDark) Color(0xFF71717A) else Color(0xFF64748B)
+                else -> if (colors.isDark) Color(0xFF34D399) else Color.White
+            }
+            val buttonBorder = when {
+                isCurrentConnected -> null
+                isDead -> BorderStroke(1.dp, if (colors.isDark) Color(0xFF3F3F46) else Color(0xFFCBD5E1))
+                colors.isDark -> BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f))
+                else -> BorderStroke(1.dp, Color(0xFF047857))
             }
 
-            FilledTonalButton(
+            Button(
                 onClick = onConnect,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = btnBg,
-                    contentColor = btnFg
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = buttonContainerColor,
+                    contentColor = buttonContentColor
                 ),
-                border = if (!isCurrentConnected && !colors.isDark) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)) else null,
+                border = buttonBorder,
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = if (colors.isDark || isDead) 0.dp else 1.5.dp,
+                    pressedElevation = 0.5.dp
+                ),
                 shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                 modifier = Modifier.height(36.dp)
             ) {
-                Text(
-                    text = if (isCurrentConnected) "Active" else strings.btnConnect,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                if (isCurrentConnected) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Actif",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                } else if (isDead) {
+                    Text(
+                        text = "Hors ligne",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = buttonContentColor
+                    )
+                } else {
+                    Text(
+                        text = strings.btnConnect,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = buttonContentColor
+                    )
+                }
             }
         }
     }

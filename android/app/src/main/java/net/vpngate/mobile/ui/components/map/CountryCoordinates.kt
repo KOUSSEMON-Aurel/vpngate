@@ -223,16 +223,4 @@ object CountryCoordinates {
         val pair = centers[countryCode.uppercase()] ?: return null
         return Offset(pair.first, pair.second)
     }
-
-    fun countryCodeToEmoji(countryCode: String?): String {
-        if (countryCode.isNullOrBlank() || countryCode.length != 2) return "🌐"
-        return try {
-            val first = Character.codePointAt(countryCode.uppercase(), 0) - 0x41 + 0x1F1E6
-            val second = Character.codePointAt(countryCode.uppercase(), 1) - 0x41 + 0x1F1E6
-            String(Character.toChars(first)) + String(Character.toChars(second))
-        } catch (_: Exception) {
-            "🌐"
-        }
-    }
-
 }

@@ -89,10 +89,12 @@ class VpnGateRepository(
                     Log.w("VPNGate", "Failed writing cache file: ${ce.message}")
                 }
 
-                val merged = listOf(warp) + vpnBookServers + parsed
+                val merged = (listOf(warp) + vpnBookServers + parsed).distinctBy {
+                    "${it.source}_${it.ip}_${it.remotePort}_${it.protocol}"
+                }
                 cachedServers = merged
                 isLiveLoaded = true
-                Log.d("OpenRelay", "Total servers available: ${merged.size} (VPNGate=${parsed.size}, VPNBook=${vpnBookServers.size}, WireGuard=1)")
+                Log.d("OpenRelay", "Total unique servers available: ${merged.size} (VPNGate=${parsed.size}, VPNBook=${vpnBookServers.size}, WireGuard=1)")
                 return@withContext merged
             }
         } catch (e: Exception) {
@@ -101,7 +103,9 @@ class VpnGateRepository(
                 return@withContext cachedServers
             }
             val bundled = getBundledServers(context)
-            val fallback = listOf(warp) + vpnBookServers + bundled
+            val fallback = (listOf(warp) + vpnBookServers + bundled).distinctBy {
+                "${it.source}_${it.ip}_${it.remotePort}_${it.protocol}"
+            }
             cachedServers = fallback
             return@withContext fallback
         }
@@ -109,23 +113,47 @@ class VpnGateRepository(
         return@withContext cachedServers
     }
 
-    suspend fun pingServers(servers: List<VpnServer>, limit: Int = 40): List<VpnServer> = withContext(Dispatchers.IO) {
-        val targets = servers.take(limit)
-        val pinged = targets.map { server ->
-            async {
-                if (server.isWarp) {
-                    server.copy(ping = 15)
-                } else {
-                    val ms = PingUtil.measureLatency(server.ip, server.remotePort, 1500)
-                    server.copy(ping = if (ms > 0) ms else server.ping)
-                }
-            }
-        }.awaitAll()
+    suspend fun pingServers(
+        servers: List<VpnServer>,
+        onProgress: (suspend (List<VpnServer>) -> Unit)? = null
+    ): List<VpnServer> = withContext(Dispatchers.IO) {
+        val currentList = servers.toMutableList()
 
-        val pingMap = pinged.associateBy { it.hostName }
-        servers.map { original ->
-            pingMap[original.hostName] ?: original
+        // Prioritize VPNBook + WARP + Backbone + top 30 VPNGate servers
+        val priorityTargets = servers.filter { it.isWarp || it.isVpnBook || it.isBackbone } +
+                servers.filter { !it.isWarp && !it.isVpnBook && !it.isBackbone }.take(30)
+
+        // Gentle concurrency of 6 parallel sockets, 2000ms timeout
+        val chunks = priorityTargets.chunked(6)
+        for (chunk in chunks) {
+            val batchResults = chunk.map { server ->
+                async {
+                    if (server.isWarp) {
+                        server.copy(isReachable = true, verifiedLatency = 15L)
+                    } else {
+                        val port = if (server.remotePort in 1..65535) server.remotePort else 443
+                        val ms = PingUtil.measureLatency(
+                            host = server.ip,
+                            port = port,
+                            timeoutMs = 2000
+                        )
+                        if (ms > 0) {
+                            server.copy(isReachable = true, verifiedLatency = ms)
+                        } else {
+                            server.copy(isReachable = false)
+                        }
+                    }
+                }
+            }.awaitAll()
+
+            val batchMap = batchResults.associateBy { it.ip + it.source + it.remotePort }
+            for (i in currentList.indices) {
+                val key = currentList[i].ip + currentList[i].source + currentList[i].remotePort
+                batchMap[key]?.let { currentList[i] = it }
+            }
+            onProgress?.invoke(currentList.toList())
         }
+        currentList.toList()
     }
 
     suspend fun getCurrentPublicIp(): String? = apiService.fetchCurrentPublicIp()
@@ -134,6 +162,6 @@ class VpnGateRepository(
         val warp = servers.firstOrNull { it.isWarp }
         val backbone = servers.filter { it.isBackbone && it.isOnline }
             .minByOrNull { it.ping }
-        return backbone ?: warp ?: servers.filter { it.isOnline }.minByOrNull { it.ping }
+        return warp ?: backbone ?: servers.filter { it.isOnline }.minByOrNull { it.ping }
     }
 }

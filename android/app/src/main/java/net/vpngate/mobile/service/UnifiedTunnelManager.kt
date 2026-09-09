@@ -72,29 +72,32 @@ object UnifiedTunnelManager {
         appContext = context.applicationContext
         Log.d(TAG, "startVpn called for ${server.countryLong} (proto=${server.protocol}, source=${server.source})")
 
-        // Disconnect whichever tunnel might be running first
-        if (activeProtocol == "wireguard" && !server.isWarp) {
-            scope.launch { WireGuardTunnelManager.stopTunnel(context) }
-        } else if (activeProtocol == "openvpn" && server.isWarp) {
-            OpenVpnTunnelManager.stopVpn()
-        }
-
-        if (server.isWarp) {
-            activeProtocol = "wireguard"
-            _connectionState.value = VpnConnectionState(
-                status = ConnectionStatus.CONNECTING,
-                connectedServer = server
-            )
-            scope.launch {
-                WireGuardTunnelManager.startTunnel(context, server)
+        scope.launch {
+            // Cleanly stop whichever tunnel might be running first to avoid TUN collision
+            val prevProto = activeProtocol
+            if (prevProto == "wireguard") {
+                WireGuardTunnelManager.stopTunnel(context)
+                kotlinx.coroutines.delay(350)
+            } else if (prevProto == "openvpn") {
+                OpenVpnTunnelManager.stopVpn()
+                kotlinx.coroutines.delay(350)
             }
-        } else {
-            activeProtocol = "openvpn"
-            _connectionState.value = VpnConnectionState(
-                status = ConnectionStatus.CONNECTING,
-                connectedServer = server
-            )
-            OpenVpnTunnelManager.startVpn(context, server)
+
+            if (server.isWarp) {
+                activeProtocol = "wireguard"
+                _connectionState.value = VpnConnectionState(
+                    status = ConnectionStatus.CONNECTING,
+                    connectedServer = server
+                )
+                WireGuardTunnelManager.startTunnel(context, server)
+            } else {
+                activeProtocol = "openvpn"
+                _connectionState.value = VpnConnectionState(
+                    status = ConnectionStatus.CONNECTING,
+                    connectedServer = server
+                )
+                OpenVpnTunnelManager.startVpn(context, server)
+            }
         }
     }
 

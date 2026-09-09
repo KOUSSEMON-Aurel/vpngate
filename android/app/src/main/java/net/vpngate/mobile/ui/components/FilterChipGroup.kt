@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.vpngate.mobile.ui.theme.AppTheme
@@ -36,16 +37,16 @@ fun FilterChipGroup(
         FilterChip(
             selected = selectedCountry == null,
             onClick = { onSelectCountry(null) },
-            label = { Text("All", fontSize = 12.sp) },
+            label = { Text("Tous", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
             colors = FilterChipDefaults.filterChipColors(
                 containerColor = colors.surface,
-                labelColor = colors.textSecondary,
-                selectedContainerColor = colors.accentPrimary,
-                selectedLabelColor = if (colors.isDark) Color(0xFF09090B) else Color.White
+                labelColor = colors.textPrimary,
+                selectedContainerColor = if (colors.isDark) colors.accentPrimary else Color(0xFF059669),
+                selectedLabelColor = Color.White
             ),
             border = FilterChipDefaults.filterChipBorder(
-                borderColor = colors.border,
-                selectedBorderColor = colors.accentPrimary,
+                borderColor = if (colors.isDark) colors.border else Color(0xFFCBD5E1),
+                selectedBorderColor = if (colors.isDark) colors.accentPrimary else Color(0xFF047857),
                 enabled = true,
                 selected = selectedCountry == null
             )
@@ -57,16 +58,16 @@ fun FilterChipGroup(
             FilterChip(
                 selected = isSelected,
                 onClick = { onSelectCountry(if (isSelected) null else code) },
-                label = { Text(code, fontSize = 12.sp) },
+                label = { Text(code, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                 colors = FilterChipDefaults.filterChipColors(
                     containerColor = colors.surface,
                     labelColor = colors.textPrimary,
-                    selectedContainerColor = colors.accentPrimary,
-                    selectedLabelColor = if (colors.isDark) Color(0xFF09090B) else Color.White
+                    selectedContainerColor = if (colors.isDark) colors.accentPrimary else Color(0xFF059669),
+                    selectedLabelColor = Color.White
                 ),
                 border = FilterChipDefaults.filterChipBorder(
-                    borderColor = colors.border,
-                    selectedBorderColor = colors.accentPrimary,
+                    borderColor = if (colors.isDark) colors.border else Color(0xFFCBD5E1),
+                    selectedBorderColor = if (colors.isDark) colors.accentPrimary else Color(0xFF047857),
                     enabled = true,
                     selected = isSelected
                 )

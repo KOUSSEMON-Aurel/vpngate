@@ -47,22 +47,22 @@ val DarkAppColors = AppColors(
 
 val LightAppColors = AppColors(
     isDark = false,
-    background = Color(0xFFF1F5F9), // Slate 100: allows white cards to stand out with crisp depth
+    background = Color(0xFFF8FAFC), // Slate 50
     surface = Color(0xFFFFFFFF),    // Pure White cards
-    surfaceVariant = Color(0xFFE2E8F0), // Slate 200 for subtle chip/button backgrounds
-    border = Color(0xFFCBD5E1),     // Slate 300: distinct, sharp, elegant card borders
+    surfaceVariant = Color(0xFFF1F5F9), // Slate 100
+    border = Color(0xFFCBD5E1),     // Slate 300
     borderSubtle = Color(0xFFE2E8F0),
-    textPrimary = Color(0xFF0F172A), // Slate 900: sharp readability and contrast
-    textSecondary = Color(0xFF334155), // Slate 700
-    textMuted = Color(0xFF64748B),   // Slate 500
+    textPrimary = Color(0xFF0F172A), // Slate 900: sharp readability
+    textSecondary = Color(0xFF334155), // Slate 700: high contrast secondary
+    textMuted = Color(0xFF475569),   // Slate 600: never washed out
     accentPrimary = Color(0xFF059669), // Emerald 600
     accentSecondary = Color(0xFF0284C7), // Sky 600
     statusConnected = Color(0xFF059669),
     statusConnecting = Color(0xFF0284C7),
-    statusError = Color(0xFFE11D48),
+    statusError = Color(0xFFDC2626),
     pillBackground = Color(0xFFFFFFFF),
     navBarBackground = Color(0xFFFFFFFF),
-    cardShadowColor = Color(0x120F172A)
+    cardShadowColor = Color(0x180F172A)
 )
 
 val LocalAppColors = staticCompositionLocalOf { DarkAppColors }

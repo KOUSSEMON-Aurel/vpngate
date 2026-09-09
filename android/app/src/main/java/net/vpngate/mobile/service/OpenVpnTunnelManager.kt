@@ -65,10 +65,11 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
 
         try {
             Log.d(TAG, "Starting OpenVPN for ${server.countryLong} (${server.ip})...")
+            val rawConfig = server.decodedConfig
+                .replace(Regex("""dev\s+tun\d+"""), "dev tun")
+
             val sanitizedConfig = buildString {
-                appendLine("redirect-gateway def1 ipv6")
-                appendLine("route-ipv6 ::/0")
-                appendLine("ifconfig-ipv6 fd15:53b6:dead::2/64 fd15:53b6:dead::1")
+                appendLine("redirect-gateway def1")
                 appendLine("dhcp-option DNS 1.1.1.1")
                 appendLine("dhcp-option DNS 8.8.8.8")
                 appendLine("tun-mtu 1500")
@@ -76,13 +77,19 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
                 appendLine("nobind")
                 appendLine("auth-user-pass")
                 appendLine("connect-retry 1")
-                appendLine("connect-retry-max 1")
+                appendLine("connect-retry-max 2")
                 appendLine("resolv-retry 5")
                 appendLine()
-                append(server.decodedConfig)
+                append(rawConfig)
             }
             val user = if (server.isVpnBook) (server.authUsername ?: "vpnbook") else "vpn"
-            val pass = if (server.isVpnBook) (server.authPassword ?: "3ssumf2") else "vpn"
+            val pass = if (server.isVpnBook) {
+                net.vpngate.mobile.data.api.VpnBookApiService.lastKnownPassword
+                    ?: server.authPassword?.takeIf { it != "$" && it.isNotBlank() }
+                    ?: "3ssumf2"
+            } else "vpn"
+
+            Log.d(TAG, "Connecting with auth user=$user, pass=${pass.take(2)}***")
             OpenVpnApi.startVpn(
                 context,
                 sanitizedConfig,
@@ -183,10 +190,20 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
                     )
                 }
             }
-            LibStatus.LEVEL_NOTCONNECTED,
-            LibStatus.LEVEL_NONETWORK -> {
+            LibStatus.LEVEL_NOTCONNECTED -> {
                 // Do not overwrite an ERROR status with DISCONNECTED when the process exits after an error
                 if (_connectionState.value.status != ConnectionStatus.ERROR) {
+                    timerJob?.cancel()
+                    _connectionState.value = VpnConnectionState(
+                        status = ConnectionStatus.DISCONNECTED,
+                        connectedServer = null
+                    )
+                }
+            }
+            LibStatus.LEVEL_NONETWORK -> {
+                // Transient state during socket initialization or network switch - do not abort if connecting
+                if (_connectionState.value.status != ConnectionStatus.CONNECTING &&
+                    _connectionState.value.status != ConnectionStatus.ERROR) {
                     timerJob?.cancel()
                     _connectionState.value = VpnConnectionState(
                         status = ConnectionStatus.DISCONNECTED,

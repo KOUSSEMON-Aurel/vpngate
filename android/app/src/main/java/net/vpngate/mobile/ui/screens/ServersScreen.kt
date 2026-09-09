@@ -19,24 +19,38 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,42 +134,6 @@ fun ServersScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Protocol Filter Tabs: ALL, WARP, OPENVPN
-        val protocolFilter by viewModel.protocolFilter.collectAsState()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            net.vpngate.mobile.ui.viewmodel.ProtocolFilter.entries.forEach { filter ->
-                val isSelected = protocolFilter == filter
-                val label = when (filter) {
-                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.ALL -> strings.filterAll
-                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.WARP -> strings.filterWarp
-                    net.vpngate.mobile.ui.viewmodel.ProtocolFilter.OPENVPN -> strings.filterOpenVpn
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSelected) colors.accentPrimary else colors.surface)
-                        .border(1.dp, if (isSelected) colors.accentPrimary else colors.border, RoundedCornerShape(8.dp))
-                        .clickable { viewModel.setProtocolFilter(filter) }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = label,
-                        color = if (isSelected) (if (colors.isDark) Color(0xFF09090B) else Color.White) else colors.textPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         // Search Bar
         OutlinedTextField(
             value = searchQuery,
@@ -198,7 +176,7 @@ fun ServersScreen(
                 .height(50.dp)
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // Country Filter Chips
         if (countries.isNotEmpty()) {
@@ -211,30 +189,261 @@ fun ServersScreen(
             Spacer(modifier = Modifier.height(4.dp))
         }
 
-        // Sort Bar
+        // Single-Row Controls Bar: Filtre (Left), Actifs Toggle (Center), Tri (Right)
+        val relayFilter by viewModel.relayFilter.collectAsState()
+        val onlyActive by viewModel.onlyActive.collectAsState()
+        val sortMode by viewModel.sortMode.collectAsState()
+        var showFilterMenu by remember { mutableStateOf(false) }
+        var showSortMenu by remember { mutableStateOf(false) }
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            Text(
-                text = strings.sortLabel,
-                color = colors.textSecondary,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(end = 6.dp)
-            )
-            SortTextButton(strings.sortPing, sortMode == SortMode.PING) {
-                viewModel.setSortMode(SortMode.PING)
+            // 1. FILTER DROPDOWN
+            Box(modifier = Modifier.weight(1f)) {
+                val filterLabel = when (relayFilter) {
+                    net.vpngate.mobile.ui.viewmodel.RelayFilterMode.ALL -> "Tous"
+                    net.vpngate.mobile.ui.viewmodel.RelayFilterMode.WARP -> "WireGuard"
+                    net.vpngate.mobile.ui.viewmodel.RelayFilterMode.VPNBOOK -> "VPNBook"
+                    net.vpngate.mobile.ui.viewmodel.RelayFilterMode.VPNGATE -> "VPNGate"
+                }
+                val isFilterActive = relayFilter != net.vpngate.mobile.ui.viewmodel.RelayFilterMode.ALL
+
+                Surface(
+                    onClick = { showFilterMenu = true },
+                    shape = RoundedCornerShape(10.dp),
+                    color = colors.surface,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (colors.isDark) colors.border else Color(0xFFCBD5E1)
+                    ),
+                    shadowElevation = if (colors.isDark) 0.dp else 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FilterList,
+                            contentDescription = "Filtre",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = filterLabel,
+                            color = colors.textPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        if (isFilterActive) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.accentPrimary)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showFilterMenu,
+                    onDismissRequest = { showFilterMenu = false },
+                    shape = RoundedCornerShape(14.dp),
+                    containerColor = colors.surface,
+                    shadowElevation = if (colors.isDark) 0.dp else 8.dp,
+                    border = BorderStroke(1.dp, if (colors.isDark) colors.border else Color(0xFFCBD5E1))
+                ) {
+                    val filterOptions = listOf(
+                        net.vpngate.mobile.ui.viewmodel.RelayFilterMode.ALL to "Tous les relais",
+                        net.vpngate.mobile.ui.viewmodel.RelayFilterMode.WARP to "WireGuard (WARP)",
+                        net.vpngate.mobile.ui.viewmodel.RelayFilterMode.VPNBOOK to "VPNBook",
+                        net.vpngate.mobile.ui.viewmodel.RelayFilterMode.VPNGATE to "VPNGate"
+                    )
+
+                    filterOptions.forEach { (mode, label) ->
+                        val isSelected = relayFilter == mode
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) (if (colors.isDark) colors.statusConnected else Color(0xFF047857)) else colors.textPrimary
+                                )
+                            },
+                            trailingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = if (colors.isDark) colors.statusConnected else Color(0xFF047857),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null,
+                            onClick = {
+                                viewModel.setRelayFilter(mode)
+                                showFilterMenu = false
+                            }
+                        )
+                    }
+                }
             }
-            Spacer(modifier = Modifier.width(4.dp))
-            SortTextButton(strings.sortSpeed, sortMode == SortMode.SPEED) {
-                viewModel.setSortMode(SortMode.SPEED)
+
+            // 2. ACTIFS UNIQUEMENT TOGGLE (Direct on the row)
+            Surface(
+                onClick = { viewModel.toggleOnlyActive() },
+                shape = RoundedCornerShape(10.dp),
+                color = if (onlyActive) {
+                    if (colors.isDark) Color(0xFF065F46) else Color(0xFF059669)
+                } else colors.surface,
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (onlyActive) {
+                        if (colors.isDark) Color(0xFF10B981) else Color(0xFF047857)
+                    } else (if (colors.isDark) colors.border else Color(0xFFCBD5E1))
+                ),
+                shadowElevation = if (onlyActive) (if (colors.isDark) 0.dp else 2.dp) else (if (colors.isDark) 0.dp else 1.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    if (onlyActive) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(colors.textMuted)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = "Actifs",
+                        color = if (onlyActive) Color.White else colors.textPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-            Spacer(modifier = Modifier.width(4.dp))
-            SortTextButton(strings.sortScore, sortMode == SortMode.SCORE) {
-                viewModel.setSortMode(SortMode.SCORE)
+
+            // 3. SORT DROPDOWN
+            Box(modifier = Modifier.weight(1f)) {
+                val sortLabel = when (sortMode) {
+                    SortMode.PING -> strings.sortPing
+                    SortMode.SPEED -> strings.sortSpeed
+                    SortMode.SCORE -> strings.sortScore
+                    SortMode.COUNTRY -> "Pays"
+                }
+
+                Surface(
+                    onClick = { showSortMenu = true },
+                    shape = RoundedCornerShape(10.dp),
+                    color = colors.surface,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (colors.isDark) colors.border else Color(0xFFCBD5E1)
+                    ),
+                    shadowElevation = if (colors.isDark) 0.dp else 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SwapVert,
+                            contentDescription = "Tri",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = sortLabel,
+                            color = colors.textPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showSortMenu,
+                    onDismissRequest = { showSortMenu = false },
+                    shape = RoundedCornerShape(14.dp),
+                    containerColor = colors.surface,
+                    shadowElevation = if (colors.isDark) 0.dp else 8.dp,
+                    border = BorderStroke(1.dp, if (colors.isDark) colors.border else Color(0xFFCBD5E1))
+                ) {
+                    val sortOptions = listOf(
+                        SortMode.PING to "Latence minimale (Ping)",
+                        SortMode.SPEED to "Débit maximal (Vitesse)",
+                        SortMode.SCORE to "Score de stabilité",
+                        SortMode.COUNTRY to "Pays (A à Z)"
+                    )
+
+                    sortOptions.forEach { (mode, label) ->
+                        val isSelected = sortMode == mode
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) (if (colors.isDark) colors.statusConnected else Color(0xFF047857)) else colors.textPrimary
+                                )
+                            },
+                            trailingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = if (colors.isDark) colors.statusConnected else Color(0xFF047857),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null,
+                            onClick = {
+                                viewModel.setSortMode(mode)
+                                showSortMenu = false
+                            }
+                        )
+                    }
+                }
             }
         }
 
@@ -258,7 +467,7 @@ fun ServersScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(servers, key = { "${it.source}_${it.hostName}_${it.ip}_${it.remotePort}_${it.protocol}" }) { server ->
+                itemsIndexed(servers, key = { index, server -> "${server.source}_${server.hostName}_${server.ip}_${server.remotePort}_${server.protocol}_$index" }) { _, server ->
                     val isCurrentConnected =
                         connectionState.status == ConnectionStatus.CONNECTED &&
                         connectionState.connectedServer?.ip == server.ip

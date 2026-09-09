@@ -456,11 +456,11 @@ fun WorldMapCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            val flagEmoji = CountryCoordinates.countryCodeToEmoji(activeCountryCode)
+                            val countryTag = activeCountryCode?.uppercase() ?: "VPN"
                             val statusLabel = when {
-                                isConnected -> "$flagEmoji ${activeServer?.countryLong ?: activeCountryCode} • ${activeServer?.ping ?: 0}ms"
+                                isConnected -> "$countryTag • ${activeServer?.countryLong ?: activeCountryCode} • ${activeServer?.ping ?: 0}ms"
                                 isConnecting -> strings.statusConnecting
-                                else -> "$flagEmoji ${activeServer?.countryLong ?: activeCountryCode} (${countryNodes.size} nodes)"
+                                else -> "$countryTag • ${activeServer?.countryLong ?: activeCountryCode} (${countryNodes.size} nodes)"
                             }
 
                             Text(
@@ -511,15 +511,10 @@ fun WorldMapCard(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = CountryCoordinates.countryCodeToEmoji(tapped.countryCode),
-                                fontSize = 14.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "${tapped.countryName} • ${tapped.serverCount} servers • ${tapped.bestPing}ms",
+                                text = "${tapped.countryCode} • ${tapped.countryName} • ${tapped.serverCount} servers • ${tapped.bestPing}ms",
                                 color = colors.textPrimary,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -568,11 +563,6 @@ fun WorldMapCard(
                                 .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = CountryCoordinates.countryCodeToEmoji(node.countryCode),
-                                    fontSize = 11.sp
-                                )
-                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
                                     text = node.countryCode,
                                     color = if (isSelected) Color(0xFF10B981) else colors.textPrimary,
