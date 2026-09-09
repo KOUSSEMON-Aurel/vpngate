@@ -12,8 +12,8 @@ android {
         applicationId = "net.openrelay.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -119,7 +119,7 @@ dependencies {
     implementation("com.github.nizwar:openvpn_library:b3941ef040")
 
     // WireGuard / WARP native engine
-    implementation("com.wireguard.android:tunnel:1.0.20230706")
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
