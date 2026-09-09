@@ -52,6 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CGO_ENABLED: 0
+        continue-on-error: true
 
   build-gui:
     name: Build Desktop GUI (${{ matrix.platform }})
@@ -259,6 +260,7 @@ jobs:
   publish-unified-release:
     name: Publish Unified Multi-Platform Release
     needs: [build-cli, build-gui, build-android]
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
