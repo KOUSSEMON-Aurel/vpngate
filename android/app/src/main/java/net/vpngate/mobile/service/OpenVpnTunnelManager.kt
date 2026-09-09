@@ -81,12 +81,14 @@ object OpenVpnTunnelManager : VpnStatus.StateListener, VpnStatus.ByteCountListen
                 appendLine()
                 append(server.decodedConfig)
             }
+            val user = if (server.isVpnBook) (server.authUsername ?: "vpnbook") else "vpn"
+            val pass = if (server.isVpnBook) (server.authPassword ?: "3ssumf2") else "vpn"
             OpenVpnApi.startVpn(
                 context,
                 sanitizedConfig,
                 server.countryLong,
-                "vpn",
-                "vpn",
+                user,
+                pass,
                 emptyList()
             )
         } catch (e: Exception) {

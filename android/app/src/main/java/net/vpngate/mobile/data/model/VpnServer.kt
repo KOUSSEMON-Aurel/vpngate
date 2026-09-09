@@ -19,7 +19,9 @@ data class VpnServer(
     val message: String,
     val openVpnConfigDataBase64: String,
     val source: String = "vpngate",
-    val protocol: String = "openvpn"
+    val protocol: String = "openvpn",
+    val authUsername: String? = null,
+    val authPassword: String? = null
 ) {
     val isWireguard: Boolean
         get() = protocol == "wireguard" || source == "wireguard" || source == "warp"

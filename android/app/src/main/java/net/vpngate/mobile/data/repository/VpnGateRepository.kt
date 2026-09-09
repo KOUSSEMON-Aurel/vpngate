@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
+import net.vpngate.mobile.data.api.VpnBookApiService
 import net.vpngate.mobile.data.api.VpnGateApiService
 import net.vpngate.mobile.data.model.VpnServer
 import net.vpngate.mobile.util.CsvParser
@@ -13,7 +14,8 @@ import net.vpngate.mobile.util.PingUtil
 import java.io.File
 
 class VpnGateRepository(
-    private val apiService: VpnGateApiService = VpnGateApiService()
+    private val apiService: VpnGateApiService = VpnGateApiService(),
+    private val vpnBookService: VpnBookApiService = VpnBookApiService()
 ) {
     private var cachedServers: List<VpnServer> = emptyList()
     private var isLiveLoaded = false
@@ -21,6 +23,7 @@ class VpnGateRepository(
 
     fun getInitialServers(context: Context): List<VpnServer> {
         val warp = VpnServer.createWarpServer()
+        val vpnBookServers = vpnBookService.loadBundledServers(context)
 
         // 1. Try disk cache from previous app run
         try {
@@ -30,7 +33,7 @@ class VpnGateRepository(
                 val parsed = CsvParser.parseVpnList(cachedCsv)
                 if (parsed.isNotEmpty()) {
                     Log.d("VPNGate", "Loaded ${parsed.size} cached live servers from disk")
-                    val result = listOf(warp) + parsed
+                    val result = listOf(warp) + vpnBookServers + parsed
                     cachedServers = result
                     return result
                 }
@@ -42,9 +45,9 @@ class VpnGateRepository(
         // 2. Fall back to bundled initial asset
         val bundled = getBundledServers(context)
         val initialList = if (bundled.isNotEmpty()) {
-            listOf(warp) + bundled
+            listOf(warp) + vpnBookServers + bundled
         } else {
-            listOf(warp)
+            listOf(warp) + vpnBookServers
         }
         cachedServers = initialList
         return initialList
@@ -70,6 +73,7 @@ class VpnGateRepository(
         }
 
         val warp = VpnServer.createWarpServer()
+        val vpnBookServers = vpnBookService.getServers(context)
 
         try {
             Log.d("VPNGate", "Fetching live server list dynamically from network...")
@@ -85,10 +89,10 @@ class VpnGateRepository(
                     Log.w("VPNGate", "Failed writing cache file: ${ce.message}")
                 }
 
-                val merged = listOf(warp) + parsed
+                val merged = listOf(warp) + vpnBookServers + parsed
                 cachedServers = merged
                 isLiveLoaded = true
-                Log.d("OpenRelay", "Total servers available: ${merged.size} (including WireGuard)")
+                Log.d("OpenRelay", "Total servers available: ${merged.size} (VPNGate=${parsed.size}, VPNBook=${vpnBookServers.size}, WireGuard=1)")
                 return@withContext merged
             }
         } catch (e: Exception) {
@@ -97,7 +101,7 @@ class VpnGateRepository(
                 return@withContext cachedServers
             }
             val bundled = getBundledServers(context)
-            val fallback = listOf(warp) + bundled
+            val fallback = listOf(warp) + vpnBookServers + bundled
             cachedServers = fallback
             return@withContext fallback
         }
@@ -112,41 +116,24 @@ class VpnGateRepository(
                 if (server.isWarp) {
                     server.copy(ping = 15)
                 } else {
-                    val latency = PingUtil.measureLatency(server.ip, server.remotePort, timeoutMs = 1200)
-                    if (latency > 0) {
-                        server.copy(ping = latency)
-                    } else {
-                        server.copy(ping = 9999L)
-                    }
+                    val ms = PingUtil.measureLatency(server.ip, server.remotePort, 1500)
+                    server.copy(ping = if (ms > 0) ms else server.ping)
                 }
             }
         }.awaitAll()
 
-        val pingMap = pinged.associateBy { it.ip }
-        servers.map { pingMap[it.ip] ?: it }
+        val pingMap = pinged.associateBy { it.hostName }
+        servers.map { original ->
+            pingMap[original.hostName] ?: original
+        }
     }
+
+    suspend fun getCurrentPublicIp(): String? = apiService.fetchCurrentPublicIp()
 
     fun findBestServer(servers: List<VpnServer>): VpnServer? {
-        // Filter out dead/unreachable servers
-        val reachable = servers.filter { it.ping < 9000L }
-        val openVpnServers = reachable.filter { it.openVpnConfigDataBase64.isNotBlank() }
-
-        val bestOpenVpn = openVpnServers.sortedWith(
-            compareByDescending<VpnServer> { it.isBackbone }
-                .thenByDescending { it.isPort443 }
-                .thenByDescending { it.speed }
-                .thenByDescending { it.score }
-                .thenBy { it.ping.takeIf { p -> p > 0 } ?: 999 }
-        ).firstOrNull()
-
-        if (bestOpenVpn != null) {
-            return bestOpenVpn
-        }
-
-        return reachable.firstOrNull() ?: servers.firstOrNull()
-    }
-
-    suspend fun getCurrentPublicIp(): String? {
-        return apiService.fetchCurrentPublicIp()
+        val warp = servers.firstOrNull { it.isWarp }
+        val backbone = servers.filter { it.isBackbone && it.isOnline }
+            .minByOrNull { it.ping }
+        return backbone ?: warp ?: servers.filter { it.isOnline }.minByOrNull { it.ping }
     }
 }

@@ -1,13 +1,17 @@
 package net.vpngate.mobile.ui
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +49,12 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: VpnViewModel by viewModels()
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        startVpnConnection()
+    }
+
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -76,6 +86,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndRequestVpnPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasNotifPermission = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasNotifPermission) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+        startVpnConnection()
+    }
+
+    private fun startVpnConnection() {
         val vpnIntent = VpnService.prepare(this)
         if (vpnIntent != null) {
             vpnPermissionLauncher.launch(vpnIntent)

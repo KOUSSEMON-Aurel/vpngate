@@ -57,6 +57,14 @@
                 android:value="VPN tunnel service" />
         </service>
 
+        <receiver
+            android:name=".service.VpnActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="net.vpngate.mobile.ACTION_DISCONNECT_VPN" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

@@ -20,7 +20,12 @@ object UnifiedTunnelManager {
     private val _connectionState = MutableStateFlow(VpnConnectionState())
     val connectionState = _connectionState.asStateFlow()
 
+    private var appContext: Context? = null
     private var activeProtocol: String? = null // "wireguard" or "openvpn"
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+    }
 
     init {
         scope.launch {
@@ -44,9 +49,27 @@ object UnifiedTunnelManager {
                 }
             }
         }
+
+        scope.launch {
+            _connectionState.collect { state ->
+                val ctx = appContext ?: return@collect
+                when (state.status) {
+                    ConnectionStatus.CONNECTING -> {
+                        VpnNotificationManager.showConnecting(ctx, state.connectedServer)
+                    }
+                    ConnectionStatus.CONNECTED -> {
+                        VpnNotificationManager.showConnected(ctx, state.connectedServer, state.detectedPublicIp)
+                    }
+                    ConnectionStatus.DISCONNECTED, ConnectionStatus.DISCONNECTING, ConnectionStatus.ERROR -> {
+                        VpnNotificationManager.dismiss(ctx)
+                    }
+                }
+            }
+        }
     }
 
     fun startVpn(context: Context, server: VpnServer) {
+        appContext = context.applicationContext
         Log.d(TAG, "startVpn called for ${server.countryLong} (proto=${server.protocol}, source=${server.source})")
 
         // Disconnect whichever tunnel might be running first
@@ -79,9 +102,15 @@ object UnifiedTunnelManager {
         // Guard: only emit a new state if the IP actually changed
         if (_connectionState.value.detectedPublicIp == ip) return
         _connectionState.value = _connectionState.value.copy(detectedPublicIp = ip)
+        appContext?.let { ctx ->
+            if (_connectionState.value.status == ConnectionStatus.CONNECTED) {
+                VpnNotificationManager.showConnected(ctx, _connectionState.value.connectedServer, ip)
+            }
+        }
     }
 
     fun stopVpn(context: Context) {
+        appContext = context.applicationContext
         Log.d(TAG, "stopVpn called")
         if (activeProtocol == "wireguard") {
             scope.launch {
@@ -95,5 +124,6 @@ object UnifiedTunnelManager {
             status = ConnectionStatus.DISCONNECTED,
             connectedServer = null
         )
+        VpnNotificationManager.dismiss(context)
     }
 }
