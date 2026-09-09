@@ -54,6 +54,7 @@ android {
 
     buildTypes {
         release {
+            isDebuggable = false
             val releaseSigning = signingConfigs.getByName("release")
             if (releaseSigning.storeFile != null) {
                 signingConfig = releaseSigning
