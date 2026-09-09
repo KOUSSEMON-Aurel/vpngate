@@ -593,6 +593,114 @@ footer {
   color: #FFFFFF;
 }
 
+/* Legal Pages (Privacy Policy, Terms of Service) */
+.legal-container {
+  max-width: 860px;
+  margin: 40px auto 80px;
+  padding: 0 24px;
+  position: relative;
+  z-index: 1;
+}
+
+.legal-header {
+  margin-bottom: 36px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 24px;
+}
+
+.legal-header h1 {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  color: #FFFFFF;
+  margin-bottom: 8px;
+}
+
+.legal-header p {
+  font-size: 14px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.legal-body {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 36px 40px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  line-height: 1.75;
+}
+
+.legal-body p {
+  color: var(--text-muted);
+  font-size: 15px;
+  margin-bottom: 20px;
+}
+
+.legal-body h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 36px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-left: 3px solid var(--color-primary);
+  padding-left: 12px;
+}
+
+.legal-body ul {
+  list-style: none;
+  margin-bottom: 24px;
+  padding-left: 0;
+}
+
+.legal-body li {
+  position: relative;
+  padding-left: 24px;
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: 14.5px;
+}
+
+.legal-body li::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.legal-body strong {
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.legal-body code {
+  background: var(--bg-code);
+  border: 1px solid var(--border-subtle);
+  color: #34D399;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.legal-body a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  transition: color 0.2s;
+}
+
+.legal-body a:hover {
+  color: #34D399;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .hero-grid {
@@ -621,5 +729,13 @@ footer {
   .hero-metrics {
     flex-direction: column;
     gap: 16px;
+  }
+
+  .legal-body {
+    padding: 24px 20px;
+  }
+
+  .legal-header h1 {
+    font-size: 28px;
   }
 }
