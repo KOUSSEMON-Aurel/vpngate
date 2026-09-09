@@ -2,6 +2,8 @@ name: Update vendorHash in flake.nix
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'go.mod'
       - 'go.sum'
@@ -54,5 +56,5 @@ jobs:
           else
             git add flake.nix
             git commit -m "chore: update vendorHash in flake.nix"
-            git push
+            git push origin HEAD:main
           fi
