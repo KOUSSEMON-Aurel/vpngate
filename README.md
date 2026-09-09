@@ -288,18 +288,38 @@ Comportement configurable (sondes toutes les 10 s, grâce de 30 s, seuil de 5 é
 |---|---|---|
 | `--tunnel-health-check` | `true` | surveille le tunnel une fois connecté (sondes HTTPS multi-endpoints) |
 
-## Idées futures (TODO)
+## Publication et déploiement (Release & Push)
 
-- [x] **WARP comme source dans le TUI** : Cloudflare WARP (`Source: warp`) est fusionné dans la liste. WARP n'a pas de relais communautaire à vérifier : son probe est un simple marqueur « working » sans latence mesurée, il trie donc *en dernier* dans les tris par ping (et derrière tous les relais mesurés dans `--best` et les reconnexions), tout en restant connectable explicitement (`connect warp`). Connecté via `wg-quick` (wgcf, création du profil automatique) ou `warp-cli` si disponible.
-- [x] **Installeur one-liner** : `curl -fsSL https://raw.githubusercontent.com/KOUSSEMON-Aurel/vpngate/main/install.sh | bash` installant openvpn, wireguard-tools, wgcf (et éventuellement warp-cli), puis le binaire vpngate.
-- [x] **vpnbook multi-transport** : `connect --transport` expose les quatre transports vpnbook (`tcp443`, `tcp80`, `udp53`, `udp25000`) et les configs OpenVPN sont récupérées par transport au moment de la connexion. La liste affiche la colonne `Transport` et le TUI le détail par serveur ; sans `--transport`, le profil `tcp443` embarqué est utilisé. Seuls les serveurs vpnbook sont concernés (`--transport` avec une autre source ou un protocole non-OpenVPN est rejeté).
-- [x] **L2TP/IPsec et MS-SSTP sur le pool vpngate** : `connect --protocol l2tp/ipsec` (via strongswan + xl2tpd, username `vpn`, password `vpn`) et `connect --protocol sstp` (via sstp-client, `sstp://ip:443`) sélectionnent le protocole à la connexion. Aucun scraping HTML : l'adresse des relais vient du CSV. La validation live reste partielle selon les relais (egress parfois instable).
-- [ ] **`container-as-gateway` + kill switch** : router tout le trafic de la machine via un conteneur OpenVPN (passerelle par défaut = conteneur), avec règles nftables/iptables bloquant toute sortie hors du tunnel (`DROP` sauf via `tun0`), IPv6 bloqué et DNS forcé dans le tunnel → **zéro fuite** (IP et DNS) même si le tunnel tombe. Docker seul en `--network host` n'isole ni ne reroute rien : il partage le réseau de l'hôte.
-- [x] **GUI Tauri (desktop + Android natif)** : une seule app, une seule UI (React) partagée entre desktop et mobile, tunnel natif intégré sur Android.
-  - **Desktop (fait)** : Tauri 2 + le binaire Go en sidecar (`externalBin`). Le backend HTTP `vpngate serve` expose l'API (`GET /api/health`, `GET /api/servers` avec filtres `country/proto/transport/source/min_score/max_ping/refresh`, `GET /api/status`, `POST /api/connect`, `POST /api/disconnect`, `GET /api/logs`) avec CORS `*`, par défaut sur `127.0.0.1:1865` (`--addr 0.0.0.0:1865` pour un daemon distant). Le frontend React de `gui/` parle HTTP pur (pas d'invoke Tauri), réutilisable sur mobile avec une base URL configurable dans `localStorage["vpngate.apiBase"]`. La fermeture de l'app coupe le stdin du sidecar → arrêt propre du tunnel.
-  - **Android** : tunnel natif **directement dans l'app** — pas d'export de profil, pas de sidecar (le spawn de binaire `Command.sidecar()` n'existe pas sur mobile, réponse officielle Tauri). Plugin Tauri mobile (Kotlin) étendant `VpnService` (pattern `TauriVpnService` d'EasyTier) qui distribue le FD TUN à `wireguard-go` (MIT) pour WARP ; la liste/probe des serveurs passe par le daemon Go distant (HTTP) ou une implémentation JS légère locale.
-  - **OpenVPN mobile (vpngate/vpnbook)** : sous réserve de licence — `ics-openvpn` est GPLv3, `OpenVPNAdapter` GPLv2 ; trancher (app closed-source vs GPL) avant d'embarquer un client OpenVPN.
-  - **Références** : `tauri-plugin-vpnservice` (EasyTier, pattern VpnService Kotlin, iOS incertain), `vpn9-app` (architecture Rust/Tauri/tunnel natif complète), `defguard/client` (structure desktop Rust/Tauri/React). Pas de plugin VPN first-party chez Tauri : à adapter, pas à installer.
+Des commandes automatisées sont disponibles pour versionner, synchroniser (Android, Tauri, Web) et pousser automatiquement sur GitHub :
+
+### Via Git (`git p`)
+
+```shell
+# Mode interactif (affiche le menu avec choix de version)
+git p
+
+# Mode automatique avec patch :
+git p patch
+
+# Mode automatique avec version mineure :
+git p minor
+
+# Mode push standard :
+git p normal
+```
+
+### Via Just (`just push`)
+
+```shell
+# Incrémente le patch, met à jour Android (versionCode + versionName), Tauri, Web, commit, tag et push :
+just push patch
+
+# Pour une mise à jour mineure :
+just push minor
+
+# Pour un simple push sans changer de version :
+just push normal
+```
 
 ## Notes
 
