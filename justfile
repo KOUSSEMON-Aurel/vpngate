@@ -39,3 +39,8 @@ release version:
     git push origin HEAD
     git tag -a "v{{version}}" -m "$notes"
     git push origin "v{{version}}"
+
+# Push interactif avec choix de version (patch / minor / normal)
+push mode="":
+    @./tools/push.sh {{mode}}
+
