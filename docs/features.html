@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Features & Architecture - OpenRelay VPN</title>
-  <meta name="description" content="Technical features and security architecture of OpenRelay VPN client.">
+  <title>Architecture & Protocols - OpenRelay VPN</title>
+  <meta name="description" content="Technical architecture, cryptographic protocols, and security models powering OpenRelay VPN.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/png" href="assets/icon.png">
 </head>
@@ -23,67 +23,74 @@
         <span class="brand-name">Open<span>Relay</span></span>
       </a>
       <ul class="nav-links">
-        <li><a href="index.html">Home</a></li>
-        <li><a href="features.html" class="active">Features</a></li>
-        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="features.html" class="active">Architecture</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
         <li><a href="terms.html">Terms</a></li>
-        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank" class="btn-secondary">GitHub</a></li>
+        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">GitHub</a></li>
+        <li><a href="index.html#downloads" class="btn-nav-cta">Download v1.0.2</a></li>
       </ul>
     </div>
   </nav>
 
   <!-- Hero Section -->
-  <section class="hero" style="padding-bottom: 40px;">
-    <div class="badge">
-      <span class="badge-dot"></span>
-      <span>Technical Overview</span>
+  <section class="section" style="padding-top: 50px; padding-bottom: 30px;">
+    <div class="section-header" style="margin-bottom: 20px;">
+      <div class="section-tag">Security & Engineering Spec</div>
+      <h1 class="section-title">Cryptographic Architecture</h1>
+      <p class="section-subtitle">A transparent, modular stack built on open protocols and native system firewalls.</p>
     </div>
-    <h1 class="hero-title">
-      High-Speed Privacy by Design.<br>
-      <span class="gradient-text">State-of-the-Art Architecture.</span>
-    </h1>
-    <p class="hero-desc">
-      A transparent, decoupled architecture built with modern Kotlin, Jetpack Compose, and native cryptographic tunnels.
-    </p>
   </section>
 
-  <!-- Feature Detailed Cards -->
-  <section class="features-section" style="padding-top: 0;">
-    <div class="grid-3">
-      <div class="card">
-        <div class="card-icon">⚡</div>
-        <h3 class="card-title">WireGuard Kernel Protocol</h3>
-        <p class="card-text">Utilizes ChaCha20-Poly1305 authenticated encryption and Curve25519 key exchange. Lightweight codebase reduces battery drain and CPU overhead on Android.</p>
+  <!-- Features Grid -->
+  <section class="section" style="padding-top: 0;">
+    <div class="features-grid">
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </div>
+        <h3 class="feat-title">WireGuard Kernel Protocol</h3>
+        <p class="feat-text">Uses ChaCha20-Poly1305 authenticated encryption and Curve25519 ECDH key exchange. Minimal cryptographic surface area ensures near line-speed throughput and reduced battery draw.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🔐</div>
-        <h3 class="card-title">OpenVPN 256-bit AES</h3>
-        <p class="card-text">Full compatibility with academic VPN Gate relay servers with robust TCP/UDP fallback to pierce restrictive firewalls and censorship barriers.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        </div>
+        <h3 class="feat-title">OpenVPN 256-bit AES Tunneling</h3>
+        <p class="feat-text">Full compatibility with Tsukuba University academic relays. Supports dynamic TCP/UDP handshakes to penetrate restrictive carrier-grade NATs and censorship blocks.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🗺️</div>
-        <h3 class="card-title">Interactive Gateway Map</h3>
-        <p class="card-text">Real-time geospatial visualization of active worldwide relay nodes. Instant latency sorting, ping filtering, and connection telemetry.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+        </div>
+        <h3 class="feat-title">Geospatial Gateway Visualization</h3>
+        <p class="feat-text">Interactive world map rendering node distribution across North America, Europe, and Asia-Pacific. Features instant latency benchmarking and round-trip time sorting.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">📱</div>
-        <h3 class="card-title">Adaptive Android 15 Ready</h3>
-        <p class="card-text">Native support for Edge-to-Edge display, Material You dynamic color, adaptive launcher icons, and system dark/light theme switching.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </div>
+        <h3 class="feat-title">Platform-Native Kill Switch</h3>
+        <p class="feat-text">Interacts directly with kernel packet filtering engines (nftables/iptables on Linux, WFP on Windows, and pf on macOS) to prevent IPv4, IPv6, and DNS packet leakage.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🛡️</div>
-        <h3 class="card-title">Kill Switch & DNS Shield</h3>
-        <p class="card-text">Built-in protections against IPv6 leaks and unencrypted DNS requests to ensure zero accidental traffic exposure.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        </div>
+        <h3 class="feat-title">Decentralized Mirror Failover</h3>
+        <p class="feat-text">Automatically polls and reconciles active relay servers from multiple verified HTTP/HTTPS mirrors with local SQLite/JSON fallback caching during network interruptions.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🌍</div>
-        <h3 class="card-title">Multi-Language Native Support</h3>
-        <p class="card-text">Instant on-the-fly switching between English, French, Spanish, German, and Japanese directly within the mobile application.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+        </div>
+        <h3 class="feat-title">Daemon & IPC Supervisor</h3>
+        <p class="feat-text">Background process management with privilege separation. Allows unprivileged GUI and CLI commands to trigger secure tunnel activation over local IPC sockets.</p>
       </div>
     </div>
   </section>
@@ -92,13 +99,13 @@
   <footer>
     <div class="footer-container">
       <div class="footer-copy">
-        © 2026 OpenRelay VPN Project. Free and open-source software under GPLv2.
+        © 2026 OpenRelay Project. Released under GPLv2 license. Built for digital privacy and open access.
       </div>
       <ul class="footer-links">
-        <li><a href="index.html">Home</a></li>
-        <li><a href="features.html">Features</a></li>
-        <li><a href="privacy.html">Privacy Policy</a></li>
-        <li><a href="terms.html">Terms of Service</a></li>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="features.html">Architecture</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="terms.html">Terms</a></li>
         <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">GitHub</a></li>
       </ul>
     </div>

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vpngate",
-  "version": "0.1.0",
-  "identifier": "net.vpngate.desktop",
+  "productName": "openrelay",
+  "version": "1.0.2",
+  "identifier": "net.openrelay.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "vpngate",
+        "title": "OpenRelay VPN",
         "width": 1100,
         "height": 760,
         "minWidth": 800,
@@ -27,6 +27,14 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/vpngate"],
-    "icon": ["icons/icon.png"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
   }
 }

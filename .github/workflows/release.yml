@@ -1,25 +1,25 @@
-name: Release Desktop CLI
+name: Unified Multi-Platform Release
 
 on:
   push:
     tags:
       - 'v*'
-      - '!app-v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag de release (laisser vide pour auto-détecter ou ex: v0.4.1)'
+        description: 'Tag de release (ex: v1.0.2)'
         required: false
-        default: ''
+        default: 'v1.0.2'
 
 permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  build-cli:
+    name: Build CLI Binaries (GoReleaser)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -39,9 +39,9 @@ jobs:
           elif [ -n "$(git tag --points-at HEAD)" ]; then
             TAG="$(git tag --points-at HEAD | head -n 1)"
           else
-            TAG="v0.4.1"
+            TAG="v1.0.2"
           fi
-          echo "Utilisation du tag : $TAG"
+          echo "Release tag: $TAG"
           git tag -f -a "$TAG" -m "Release $TAG"
           git push -f origin "$TAG" || true
 
@@ -52,3 +52,245 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CGO_ENABLED: 0
+
+  build-gui:
+    name: Build Desktop GUI (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+          - platform: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Build Go Sidecar Binary
+        shell: bash
+        run: |
+          mkdir -p gui/src-tauri/binaries
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            CGO_ENABLED=0 go build -o gui/src-tauri/binaries/vpngate-${{ matrix.target }}.exe .
+          else
+            CGO_ENABLED=0 go build -o gui/src-tauri/binaries/vpngate-${{ matrix.target }} .
+          fi
+          ls -la gui/src-tauri/binaries/
+
+      - name: Install Frontend Dependencies & Build Web App
+        working-directory: ./gui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Tauri Application
+        working-directory: ./gui
+        run: npx @tauri-apps/cli build
+
+      - name: Collect GUI Release Artifacts
+        shell: bash
+        run: |
+          mkdir -p gui_release_artifacts
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            find gui/src-tauri/target/release/bundle/ -type f \( -name "*.msi" -o -name "*.exe" \) -exec cp {} gui_release_artifacts/ \;
+          else
+            find gui/src-tauri/target/release/bundle/ -type f \( -name "*.deb" -o -name "*.AppImage" \) -exec cp {} gui_release_artifacts/ \;
+          fi
+          echo "Generated GUI files:"
+          ls -lh gui_release_artifacts/
+
+      - name: Upload GUI Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-${{ matrix.target }}
+          path: gui_release_artifacts/
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android (APK & AAB)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Android Release (APK & AAB)
+        working-directory: ./android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore from secrets..."
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release.jks
+            export ANDROID_STORE_FILE="release.jks"
+          else
+            echo "No keystore secret provided. Generating fallback release key..."
+            keytool -genkey -v -keystore app/release.jks \
+              -alias openrelay -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass openrelay123 -keypass openrelay123 \
+              -dname "CN=OpenRelay, OU=Mobile, O=OpenRelay, L=Paris, ST=IDF, C=FR"
+            export ANDROID_STORE_FILE="release.jks"
+            export ANDROID_KEY_ALIAS="openrelay"
+            export ANDROID_STORE_PASSWORD="openrelay123"
+            export ANDROID_KEY_PASSWORD="openrelay123"
+          fi
+
+          ./gradlew assembleRelease bundleRelease --stacktrace
+
+      - name: Verify APK Signatures
+        run: |
+          echo "Verifying APK cryptographical signatures..."
+          APKSIGNER=$(find $ANDROID_HOME/build-tools/ -name apksigner | sort -V | tail -n 1)
+          for f in android/app/build/outputs/apk/release/app-*-release.apk; do
+            if [ -f "$f" ]; then
+              echo "==> Verifying $(basename $f) :"
+              $APKSIGNER verify --verbose "$f"
+            fi
+          done
+
+      - name: Prepare Android Release Artifacts
+        run: |
+          mkdir -p android_release_artifacts
+          VERSION=$(grep 'versionName = ' android/app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            VERSION="1.0.2"
+          fi
+          
+          for f in android/app/build/outputs/apk/release/app-*-release.apk; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              arch=$(echo "$fname" | sed -E 's/app-//;s/-release\.apk//')
+              cp "$f" "android_release_artifacts/openrelay_${VERSION}_${arch}.apk"
+            fi
+          done
+
+          AAB_FILE=$(find android/app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
+          if [ -f "$AAB_FILE" ]; then
+            cp "$AAB_FILE" "android_release_artifacts/openrelay_${VERSION}.aab"
+          fi
+
+          echo "Prepared Android artifacts:"
+          ls -lh android_release_artifacts/
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: android_release_artifacts/
+          if-no-files-found: error
+
+  publish-unified-release:
+    name: Publish Unified Multi-Platform Release
+    needs: [build-cli, build-gui, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded_artifacts
+
+      - name: Collect all assets for release
+        run: |
+          mkdir -p unified_release_assets
+          find downloaded_artifacts -type f -exec cp {} unified_release_assets/ \;
+          echo "Unified release assets to publish:"
+          ls -lh unified_release_assets/
+
+      - name: Publish all assets to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v1.0.2"
+          fi
+          echo "Target Release Tag: $TAG"
+
+          cat <<EOF > release_body.md
+          ## OpenRelay VPN $TAG
+
+          Unified multi-platform release containing all official binaries for **Android**, **Desktop (Linux & Windows)**, and **CLI**.
+
+          ---
+
+          ### 📱 Mobile (Android)
+          - **Google Play Bundle**: \`openrelay_*.aab\` (Google Play Console upload)
+          - **Universal APK**: \`openrelay_*_universal.apk\` (Direct install on any Android device)
+          - **Architecture APKs**: \`arm64-v8a\`, \`armeabi-v7a\`, \`x86_64\`, \`x86\`
+
+          ### 🖥️ Desktop GUI
+          - **Windows**: \`.exe\` standalone / installer & \`.msi\` package
+          - **Linux**: \`.AppImage\` portable & \`.deb\` Debian/Ubuntu package
+
+          ### 💻 CLI & Tunnels
+          - Multi-platform Go binaries: Linux, macOS (Apple Silicon & Intel), Windows
+          - Cryptographic verification: \`checksums.txt\`
+          EOF
+
+          # Create release if GoReleaser hasn't already created it
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Creating release $TAG..."
+            gh release create "$TAG" \
+              --title "OpenRelay $TAG" \
+              --notes-file release_body.md
+          fi
+
+          echo "Uploading all GUI and Android assets to release $TAG..."
+          gh release upload "$TAG" unified_release_assets/* --clobber
+          echo "Release $TAG successfully populated with all unified assets!"

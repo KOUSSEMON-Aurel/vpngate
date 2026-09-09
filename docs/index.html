@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenRelay VPN - Fast, Private & Decentralized Relay Network</title>
-  <meta name="description" content="Official website of OpenRelay VPN. High-speed encrypted VPN powered by public relay nodes and WireGuard.">
+  <title>OpenRelay VPN - Transparent Public Relays & Cloudflare WARP</title>
+  <meta name="description" content="Decentralized, open-source VPN client connecting to University of Tsukuba public relays and Cloudflare WARP. Available for Android, Linux, Windows, and CLI.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/png" href="assets/icon.png">
 </head>
@@ -15,7 +15,7 @@
 
   <div class="ambient-glow"></div>
 
-  <!-- Navbar -->
+  <!-- Top Navigation -->
   <nav class="navbar">
     <div class="nav-container">
       <a href="index.html" class="brand-logo">
@@ -23,82 +23,232 @@
         <span class="brand-name">Open<span>Relay</span></span>
       </a>
       <ul class="nav-links">
-        <li><a href="index.html" class="active">Home</a></li>
-        <li><a href="features.html">Features</a></li>
-        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="index.html" class="active">Overview</a></li>
+        <li><a href="features.html">Architecture</a></li>
+        <li><a href="privacy.html">Privacy Policy</a></li>
         <li><a href="terms.html">Terms</a></li>
-        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank" class="btn-secondary">GitHub</a></li>
-        <li><a href="#download" class="btn-cta">Download App</a></li>
+        <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">GitHub</a></li>
+        <li><a href="#downloads" class="btn-nav-cta">Download v1.0.2</a></li>
       </ul>
     </div>
   </nav>
 
   <!-- Hero Section -->
-  <section class="hero">
-    <div class="badge">
-      <span class="badge-dot"></span>
-      <span>Next-Gen Relay Network • Zero-Logs Guaranteed</span>
+  <header class="hero">
+    <div class="hero-grid">
+      <div class="hero-content">
+        <div class="badge">
+          <span class="badge-dot"></span>
+          <span>Open-Source • Tsukuba Relay Grid • Cloudflare WARP</span>
+        </div>
+        <h1 class="hero-title">
+          Transparent VPN Relays.<br>
+          <span class="gradient-text">Zero Telemetry. Any Device.</span>
+        </h1>
+        <p class="hero-desc">
+          OpenRelay connects directly to the University of Tsukuba public relay network and Cloudflare WARP anycast routing. No commercial tracking, no required accounts, and completely free under GPLv2.
+        </p>
+        <div class="hero-actions">
+          <a href="#downloads" class="btn-primary">
+            <span>Get OpenRelay v1.0.2</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+          </a>
+          <a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank" class="btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+            <span>Source Code</span>
+          </a>
+        </div>
+        <div class="hero-metrics">
+          <div class="metric-item">
+            <span class="metric-num">100+</span>
+            <span class="metric-label">Live Public Relays</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-num">0 msgs</span>
+            <span class="metric-label">No Account Registration</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-num">GPLv2</span>
+            <span class="metric-label">100% Free & Auditable</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero Visuals: Real Terminal & App Preview -->
+      <div class="showcase-container">
+        <!-- Live Terminal Window -->
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="terminal-dot dot-red"></span>
+              <span class="terminal-dot dot-yellow"></span>
+              <span class="terminal-dot dot-green"></span>
+            </div>
+            <span class="terminal-title">openrelay-cli — bash</span>
+          </div>
+          <div class="terminal-body">
+            <div class="term-line"><span class="term-prompt">$ </span><span class="term-cmd">vpngate connect --country US</span></div>
+            <div class="term-line term-dim">→ Querying Tsukuba Academic Mirror...</div>
+            <div class="term-line term-info">✓ 94 verified public relays discovered</div>
+            <div class="term-line term-info">✓ Optimal node selected: 219.100.37.x (Ping: 32ms)</div>
+            <div class="term-line term-success">✓ OpenVPN 256-bit AES tunnel established</div>
+            <div class="term-line term-dim">→ Egress: Los Angeles, US • DNS: 1.1.1.1</div>
+          </div>
+        </div>
+
+        <!-- Android UI Mockup Card -->
+        <div class="mockup-card">
+          <div class="mockup-inner">
+            <img src="assets/preview_app.png" alt="OpenRelay Mobile App" class="mockup-img">
+            <div class="mockup-meta">
+              <span class="mockup-tag">Android Client</span>
+              <h4 class="mockup-title">Material Design 3 App</h4>
+              <p class="mockup-desc">Real-time latency metrics, country gateway map, and dual OpenVPN & WireGuard tunnel toggles.</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <h1 class="hero-title">
-      Unrestricted Freedom.<br>
-      <span class="gradient-text">Pure Privacy in Motion.</span>
-    </h1>
-    <p class="hero-desc">
-      OpenRelay connects you to a global decentralized grid of high-performance relay nodes. Encrypt your daily traffic with cutting-edge WireGuard and OpenVPN protocols with zero activity tracking.
-    </p>
-    <div class="hero-actions" id="download">
-      <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases" class="btn-cta">
-        <span>Get on Google Play</span>
-        <span>→</span>
-      </a>
-      <a href="features.html" class="btn-secondary">
-        <span>Explore Architecture</span>
-      </a>
+  </header>
+
+  <!-- Download Hub -->
+  <section class="section" id="downloads">
+    <div class="section-header">
+      <div class="section-tag">Cross-Platform Builds</div>
+      <h2 class="section-title">Official Binaries & Installers</h2>
+      <p class="section-subtitle">Single unified release v1.0.2 for all operating systems. Standalone, signed, and self-contained.</p>
+    </div>
+
+    <div class="download-grid">
+      <!-- Android -->
+      <div class="dl-card">
+        <div class="dl-header">
+          <div class="dl-icon-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          </div>
+          <div>
+            <div class="dl-os-name">Android</div>
+            <div class="dl-os-type">v1.0.2 • APK & Play Store</div>
+          </div>
+        </div>
+        <p class="dl-desc">Full GUI client with real-time public egress IP checker, Tsukuba relay list, and battery-saving WireGuard tunnel.</p>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn">
+          <span>Download Universal APK</span>
+        </a>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn-sub">Play Store Bundle (.aab) & ARM64 APK</a>
+      </div>
+
+      <!-- Windows -->
+      <div class="dl-card">
+        <div class="dl-header">
+          <div class="dl-icon-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"></path></svg>
+          </div>
+          <div>
+            <div class="dl-os-name">Windows</div>
+            <div class="dl-os-type">Desktop GUI & CLI</div>
+          </div>
+        </div>
+        <p class="dl-desc">Native desktop client with system tray integration and Windows Filtering Platform (WFP) killswitch.</p>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn">
+          <span>Windows Installer (.msi)</span>
+        </a>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn-sub">Standalone Executable (.exe) & CLI .zip</a>
+      </div>
+
+      <!-- Linux -->
+      <div class="dl-card">
+        <div class="dl-header">
+          <div class="dl-icon-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+          </div>
+          <div>
+            <div class="dl-os-name">Linux</div>
+            <div class="dl-os-type">Debian, Ubuntu, Arch, Fedora</div>
+          </div>
+        </div>
+        <p class="dl-desc">Tauri desktop app and background daemon supervisor with nftables/iptables killswitch support.</p>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn">
+          <span>Download AppImage / .deb</span>
+        </a>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn-sub">x86_64 & ARM64 Tarballs</a>
+      </div>
+
+      <!-- macOS & CLI -->
+      <div class="dl-card">
+        <div class="dl-header">
+          <div class="dl-icon-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+          </div>
+          <div>
+            <div class="dl-os-name">Terminal CLI</div>
+            <div class="dl-os-type">macOS (Apple Silicon & Intel), BSD</div>
+          </div>
+        </div>
+        <p class="dl-desc">High-speed terminal client with interactive survey prompt, ping sorting, and headless daemon control.</p>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate" class="dl-btn">
+          <span>go install or curl</span>
+        </a>
+        <a href="https://github.com/KOUSSEMON-Aurel/vpngate/releases/tag/v1.0.2" class="dl-btn-sub">Precompiled Darwin Universal Binary</a>
+      </div>
     </div>
   </section>
 
-  <!-- Features Grid -->
-  <section class="features-section">
+  <!-- Technical Features -->
+  <section class="section">
     <div class="section-header">
-      <h2 class="section-title">Engineered for Sovereign Privacy</h2>
-      <p class="section-subtitle">No compromises on speed, security, or decentralization.</p>
+      <div class="section-tag">Architecture & Engineering</div>
+      <h2 class="section-title">Built for Transparency, Speed & Control</h2>
+      <p class="section-subtitle">A zero-compromise client engineered without proprietary bloatware.</p>
     </div>
 
-    <div class="grid-3">
-      <div class="card">
-        <div class="card-icon">⚡</div>
-        <h3 class="card-title">WireGuard Anycast Acceleration</h3>
-        <p class="card-text">Lightning-fast handshakes and minimal latency powered by modern cryptographic state-of-the-art tunnels.</p>
+    <div class="features-grid">
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        </div>
+        <h3 class="feat-title">Decentralized Relay Mesh</h3>
+        <p class="feat-text">Pulls fresh relay mirrors directly from the University of Tsukuba VPNGate project with automatic CSV parsing, latency metrics, and failover.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🛡️</div>
-        <h3 class="card-title">Strict Zero-Logs Policy</h3>
-        <p class="card-text">We do not track, profile, inspect, or log your browsing data. No account registration or email required.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+        </div>
+        <h3 class="feat-title">Cloudflare WARP Anycast</h3>
+        <p class="feat-text">Switch to WireGuard-based Cloudflare WARP with a single click. Leverages Anycast edge routing for minimal latency and high-throughput connections.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🌐</div>
-        <h3 class="card-title">Decentralized Relay Mesh</h3>
-        <p class="card-text">Access hundreds of verified public relay servers across Europe, Asia, and the Americas without single point of failure.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        </div>
+        <h3 class="feat-title">Platform-Native Kill Switch</h3>
+        <p class="feat-text">Blocks unencrypted packet leaks if the VPN connection drops unexpectedly. Implemented using Linux nftables/iptables, Windows WFP, and macOS pf.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🔒</div>
-        <h3 class="card-title">Dual Protocol Engine</h3>
-        <p class="card-text">Seamlessly toggle between high-performance WireGuard and battle-tested OpenVPN 256-bit AES encryption.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </div>
+        <h3 class="feat-title">Strict Zero-Tracking Policy</h3>
+        <p class="feat-text">No user analytics, no Firebase SDKs, no behavioral tracking, and no credentials stored remotely. Your connection state remains strictly local.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">📡</div>
-        <h3 class="card-title">Live IP Verification</h3>
-        <p class="card-text">Inspect and verify your detected public egress IP and ping in real-time right from your mobile dashboard.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path></svg>
+        </div>
+        <h3 class="feat-title">Real-time Diagnostics</h3>
+        <p class="feat-text">Live verification of detected public egress IP, geographical origin, and throughput monitoring directly on the client dashboard.</p>
       </div>
 
-      <div class="card">
-        <div class="card-icon">🎨</div>
-        <h3 class="card-title">Thoughtful Minimalist UI</h3>
-        <p class="card-text">Handcrafted with Material Design 3, fluid dark/light adaptive theming, and an interactive world gateway map.</p>
+      <div class="feat-card">
+        <div class="feat-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+        </div>
+        <h3 class="feat-title">Daemon Architecture</h3>
+        <p class="feat-text">Includes a resilient background supervisor communicating over Unix domain sockets on Linux/macOS and Named Pipes on Windows.</p>
       </div>
     </div>
   </section>
@@ -107,13 +257,13 @@
   <footer>
     <div class="footer-container">
       <div class="footer-copy">
-        © 2026 OpenRelay VPN Project. Free and open-source software under GPLv2.
+        © 2026 OpenRelay Project. Released under GPLv2 license. Built for digital privacy and open access.
       </div>
       <ul class="footer-links">
-        <li><a href="index.html">Home</a></li>
-        <li><a href="features.html">Features</a></li>
-        <li><a href="privacy.html">Privacy Policy</a></li>
-        <li><a href="terms.html">Terms of Service</a></li>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="features.html">Architecture</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="terms.html">Terms</a></li>
         <li><a href="https://github.com/KOUSSEMON-Aurel/vpngate" target="_blank">GitHub</a></li>
       </ul>
     </div>
