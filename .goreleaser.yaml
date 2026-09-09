@@ -47,4 +47,4 @@ release:
     owner: KOUSSEMON-Aurel
     name: vpngate
   prerelease: auto
-  mode: append
+  mode: replace
